@@ -1,50 +1,51 @@
-
 from typing import Any, Callable, List, Optional, Tuple
-
 from torch.utils.data import Dataset
 import pandas as pd
 
 
 class CTGan_data_set(Dataset):
     """
-        This is a custom pytorch dataset that is used for the CTGan it implemnets the normal Dataset funktions plus some extra funktions that are needed by the CTGan
+        This is a custom PyTorch dataset that is used for the CTGan. It implements the normal Dataset functions plus some extra functions that are needed by the CTGan.
     """
 
     def __init__(
         self, 
-        data: pd.Dataframe = pd.Dataframe(),
+        data: pd.DataFrame = pd.DataFrame(),
         cond_cols: list = [],
-        target_col : str = None,
-        ordinal_columns = None
+        target_col: str = None,  # TODO: do something with this, idk
+        ordinal_columns: list = []
     ):
-        self.data = data
-        self.cond_cols = cond_cols
-        self.target_col = target_col
-        self.ord_cols = ordinal_columns # If this parameter is not given one cant distinguish betwean ord and cat cols or num cols
-        self.cat_cols = [column for column in data.select_dtypes(include=['object', 'category', 'bool']).columns if column not in ordinal_columns]
-        self.num_cols = data.select_dtypes(include=['number']).columns.tolist()    
+        self._data = data
+        self._cond_cols = cond_cols
+        self._target_col = target_col
+        self._ord_cols = ordinal_columns  # If this parameter is not given, one can't distinguish between ord and cat cols or num cols
+        if ordinal_columns:
+            self._cat_cols = [column for column in data.select_dtypes(include=['object', 'category', 'bool']).columns if column not in ordinal_columns]
+        else:
+            self._cat_cols = data.select_dtypes(include=['object', 'category', 'bool']).columns.tolist()
+        self._num_cols = data.select_dtypes(include=['number']).columns.tolist()    
 
     def __len__(self):
-        return len(self.X)
+        return len(self._data)
 
     def __getitem__(self, idx):
-        X = self.data[idx]
+        X = self._data.iloc[idx]
         return X
     
     def columns(self) -> list:
-        return list(self.data.columns)
+        return list(self._data.columns)
     
     def dataframe(self) -> pd.DataFrame:
-        return self.data
+        return self._data
     
     def cond_cols(self) -> List[str]:
-        return self.cond_cols
+        return self._cond_cols
 
     def cat_cols(self):
-        return self.cat_cols
+        return self._cat_cols
 
     def num_cols(self):
-        return self.cat_cols
+        return self._num_cols
     
     def ord_cols(self):
-        return self.ord_cols
+        return self._ord_cols

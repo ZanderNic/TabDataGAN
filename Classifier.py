@@ -11,8 +11,8 @@ from torch.utils.data import DataLoader, random_split
 
 
 # Projects imports
-from .dataset import CTGan_data_set
-from .CTGan_utils import get_nolin_akt, get_loss_function
+from dataset import CTGan_data_set
+from CTGan_utils import get_nolin_akt, get_loss_function
 
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu' # If device is not set try to use cuda else cpu
@@ -55,7 +55,7 @@ class Classifier(nn.Module):
         classifier_n_units_out_per_category: list,  
         classifier_n_layers_hidden: int = 3, 
         classifier_n_units_hidden: int = 4, 
-        classifier_nonlin: str = "leaky_relu", 
+        classifier_nonlin: str = "leaky_relu",
         classifier_batch_norm: bool = False, 
         classifier_dropout: float = 0.001,
         loss: str = "cross_entropy",
@@ -67,20 +67,17 @@ class Classifier(nn.Module):
         self.loss = get_loss_function(loss)  
         self.num_categories = len(classifier_n_units_out_per_category)
         self.classifier_n_units_out_per_category = classifier_n_units_out_per_category
-
         self.net = nn.Sequential()
+        self.acc_output = np.cumsum([0] + classifier_n_units_out_per_category).tolist()
 
-        # Activation function
-        classifier_nonlin = get_nolin_akt(classifier_nonlin)()
+        classifier_nonlin = get_nolin_akt(classifier_nonlin)
 
-        # First Layer
         self.net.append(nn.Linear(classifier_n_units_in, classifier_n_units_hidden))
         if classifier_batch_norm:
             self.net.append(nn.BatchNorm1d(classifier_n_units_hidden))
         self.net.append(classifier_nonlin)
         self.net.append(nn.Dropout(classifier_dropout))
 
-        # Hidden Layers
         for _ in range(classifier_n_layers_hidden - 1):
             self.net.append(nn.Linear(classifier_n_units_hidden, classifier_n_units_hidden))
             if classifier_batch_norm:
@@ -88,7 +85,6 @@ class Classifier(nn.Module):
             self.net.append(classifier_nonlin)
             self.net.append(nn.Dropout(classifier_dropout))
 
-        # Separate Output Layer für jede Kategorie (Softmax wird später angewendet)
         self.output_layers = nn.ModuleList(
             [nn.Linear(classifier_n_units_hidden, out_dim) for out_dim in classifier_n_units_out_per_category]
         )
@@ -107,18 +103,15 @@ class Classifier(nn.Module):
                 conditions = conditions.to(self.device)
 
                 outputs = self.forward(data)  # Liste mit den Ausgaben pro Kategorie
-                loss_value = sum([loss_func(output, torch.argmax(conditions[:, i, :], dim=1)) 
+                loss_value = sum([loss_func(output, torch.argmax(conditions[:, self.acc_output[i]: self.acc_output[i+1]], dim=1))
                                   for i, output in enumerate(outputs)])
-
+                
                 data_loss += loss_value.item()
-
-                # Vorhersagen und Genauigkeit für jede Kategorie
                 for i, output in enumerate(outputs):
                     _, predicted = torch.max(output, 1)
-                    correct_predictions[i] += (predicted == torch.argmax(conditions[:, i, :], dim=1)).sum().item()
+                    correct_predictions[i] += (predicted == torch.argmax(conditions[:, self.acc_output[i]: self.acc_output[i+1]], dim=1)).sum().item()
 
                 total_samples += conditions.size(0)
-
         avg_data_loss = data_loss / len(data_loader)
         data_accuracy = [correct / total_samples * 100 for correct in correct_predictions]
 
@@ -130,7 +123,8 @@ class Classifier(nn.Module):
         test_loader,
         lr,
         opt_betas,
-        patience
+        patience,
+        epochs
     ):
         model = self.net.to(self.device)
         model.train()
@@ -139,15 +133,14 @@ class Classifier(nn.Module):
         loss_func = self.loss
 
         early_stopping = EarlyStopping(patience, track_model=True, mode="min")
-        
-        for epoch in range(1, self.classifier_n_iter + 1):
+
+        for epoch in range(1, epochs + 1):
             model.train() 
             for data, conditions in train_loader:
                 data = data.to(self.device)
                 conditions = conditions.to(self.device)
-
                 outputs = self.forward(data)
-                loss_value = sum([loss_func(output, torch.argmax(conditions[:, i, :], dim=1)) 
+                loss_value = sum([loss_func(output, torch.argmax(conditions[:, self.acc_output[i]: self.acc_output[i+1]], dim=1)) # TODO die contions sind nicht so sondern einfach 1d sodas man halt die hier nicht so indizieren kann
                                   for i, output in enumerate(outputs)])
 
                 optimizer.zero_grad()

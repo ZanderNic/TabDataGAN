@@ -12,7 +12,6 @@ class Data_Encoder(object):
             self, 
             raw_df: pd.DataFrame, 
             categorical_columns: list, 
-            log_columns: list, 
             ordinal_columns: list, 
             numeric_columns: list, 
             target_col: str = None,
@@ -22,7 +21,6 @@ class Data_Encoder(object):
         self.categorical_columns = categorical_columns
         self.ordinal_columns = ordinal_columns
         self.numeric_columns = numeric_columns
-        self.log_columns = log_columns
         self.target_col = target_col  # Optional target column
         self.random_state = random_state
         self.ordinal_cols_max_cluster = ordinal_cols_max_cluster
@@ -34,26 +32,34 @@ class Data_Encoder(object):
         """
         Prepares encoders and scalers based on the given DataFrame, but does not modify the DataFrame itself.
         """
+        encoded_dim = 0 
+
         for column in self.categorical_columns:
             one_hot_encoder = preprocessing.OneHotEncoder(sparse_output=False)
             df[column] = df[column].astype(str)
             one_hot_encoder.fit(df[[column]]) 
             self.one_hot_encoders[column] = one_hot_encoder
+            encoded_dim += len(one_hot_encoder.get_feature_names_out())
 
         for column in self.ordinal_columns:
             if df[column].nunique() > self.ordinal_cols_max_cluster:
                 scaler = MinMaxScaler(feature_range=(0, 1))
                 scaler.fit(df[[column]])  
                 self.min_max_scalers[column] = scaler
+                encoded_dim += 1
             else:
                 one_hot_encoder = preprocessing.OneHotEncoder(sparse_output=False)
                 one_hot_encoder.fit(df[[column]]) 
                 self.one_hot_encoders[column] = one_hot_encoder
+                encoded_dim += len(one_hot_encoder.get_feature_names_out())
 
         for column in self.numeric_columns:
             scaler = MinMaxScaler(feature_range=(0, 1))
             scaler.fit(df[[column]])
             self.min_max_scalers[column] = scaler
+            encoded_dim += 1
+        
+        self.encoder_n_dim = encoded_dim
 
     def transform(self, new_df: pd.DataFrame):
         """
@@ -108,3 +114,9 @@ class Data_Encoder(object):
                 df_sample[column] = scaler.inverse_transform(df_sample[[column]])
         
         return df_sample
+
+    def encodet_dim(self):
+        return self.encoder_n_dim 
+    
+    def __call__(self, data):
+        return self.transform(data)
