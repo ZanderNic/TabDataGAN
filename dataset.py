@@ -12,18 +12,39 @@ class CTGan_data_set(Dataset):
         self, 
         data: pd.DataFrame = pd.DataFrame(),
         cond_cols: list = [],
-        target_col: str = None,  # TODO: do something with this, idk
-        ordinal_columns: list = []
+        target_col: str = None,  
+        cat_cols: list = [],  
+        ordinal_columns: list = []  
     ):
         self._data = data
         self._cond_cols = cond_cols
         self._target_col = target_col
-        self._ord_cols = ordinal_columns  # If this parameter is not given, one can't distinguish between ord and cat cols or num cols
-        if ordinal_columns:
-            self._cat_cols = [column for column in data.select_dtypes(include=['object', 'category', 'bool']).columns if column not in ordinal_columns]
+        self._ord_cols = ordinal_columns  
+        
+       
+        if not cat_cols:
+            if ordinal_columns:
+                self._cat_cols = [
+                    column for column in data.select_dtypes(include=['object', 'category', 'bool']).columns 
+                    if column not in ordinal_columns
+                ]
+            else:
+                self._cat_cols = data.select_dtypes(include=['object', 'category', 'bool']).columns.tolist()
         else:
-            self._cat_cols = data.select_dtypes(include=['object', 'category', 'bool']).columns.tolist()
-        self._num_cols = data.select_dtypes(include=['number']).columns.tolist()    
+            self._cat_cols = cat_cols
+
+        if ordinal_columns:
+            self._num_cols = [
+                column for column in data.select_dtypes(include=['number']).columns 
+                if column not in ordinal_columns
+            ]
+        else:
+            self._num_cols = data.select_dtypes(include=['number']).columns.tolist()
+        
+        for col in self._cond_cols:
+            if col not in data.columns:
+                raise ValueError(f"Conditional column '{col}' is not present in the dataset.")
+
 
     def __len__(self):
         return len(self._data)

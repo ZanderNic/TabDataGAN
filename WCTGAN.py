@@ -41,8 +41,9 @@ class Generator(nn.Module):
     ):
         super().__init__()
         
-        self.device = device
+        self.n_units_lat = generator_n_units_in
 
+        self.device = device
         self.net = nn.Sequential()
 
         generator_nonlin = get_nolin_akt(generator_nonlin)
@@ -69,19 +70,23 @@ class Generator(nn.Module):
     def forward(self, x): #TODO hier machen das man halt auch einen batch druch geben kann 
         return self.net(x)
 
-    def generate(self, n_samples, condition): #todo das hier alles
-        self.eval()
+    def generate(self, n_samples, condition): 
+        self.eval()  
         with torch.no_grad():
-            fake = self(n_samples, condition)
-        return fake
+            noise = torch.randn(n_samples, self.n_units_lat, device=self.device) 
+            generator_input = torch.cat([noise, condition], dim=1) 
+            gen_data = self.forward(generator_input) 
+
+        return gen_data
+
 
 
 class Discriminator(nn.Module):
     
     def __init__(
         self, 
-        discriminator_n_units_in,
-        discriminator_n_units_conditional,
+        discriminator_n_units_in: int,
+        discriminator_n_units_conditional: int,
         discriminator_n_layers_hidden: int = 3, 
         discriminator_n_units_hidden: int = 100, 
         discriminator_nonlin: str = "leaky_relu", 
@@ -110,29 +115,27 @@ class Discriminator(nn.Module):
                 self.net.append(discriminator_nonlin)
                 self.net.append(nn.Dropout(discriminator_dropout))
 
-        self.net.append(nn.Linear(discriminator_n_units_hidden, 1))
-        self.net.append(nn.Sigmoid())
+        self.net.append(nn.Linear(discriminator_n_units_hidden, 1))  
 
 
     def forward(self, x):
-         return self.net(x).view(-1)
+        return self.net(x).view(-1)
 
-
-def label_real(size):
-   return torch.ones(size)
-
-def label_fake(size):
-   return torch.zeros(size)
-
-def get_results(y_hat_real, y_hat_fake):
-    acc_real = (y_hat_real >= 0.5).float().sum().item()
-    acc_fake = (y_hat_fake < 0.5).float().sum().item()
-    y_hat_real = y_hat_real.sum().item()
-    y_hat_fake = y_hat_fake.sum().item()
-    return y_hat_real, y_hat_fake, acc_real, acc_fake
+def wasserstein_loss(y_real, y_fake):
+    return torch.mean(y_fake) - torch.mean(y_real)
 
 
 class CTGan(nn.Module):
+    """
+
+        Classifier:  
+            the classifier is used to predict the condition, it is trained on the real data and later used for classifiing the conditon for the generated data
+            to get a nother loss
+    
+    
+    
+    
+    """
 
     def __init__(
         self,
@@ -185,8 +188,9 @@ class CTGan(nn.Module):
         clipping_value: int = 0,
         lambda_gradient_penalty: float = 10,
         lambda_identifiability_penalty: float = 0.1,
+        grad_penalty: bool = True,
         
-        n_epochs: int = 200,
+        n_epochs: int = 1000,
         n_iter_print: int = 10,
         n_iter_checkpoint: int = None,
         early_stopping_patience: int = 20,
@@ -250,9 +254,10 @@ class CTGan(nn.Module):
 
         self.batch_size = batch_size
         self.clipping_value = clipping_value
-        self.lambda_gradient_penalty = lambda_gradient_penalty #TODO
+        self.lambda_gradient_penalty = lambda_gradient_penalty # to tourn of gradient penalty set this to 0 
         self.lambda_identifiability_penalty = lambda_identifiability_penalty #TODO
         
+
         self.random_state = random_state
         self.max_categorical_encoder = max_categorical_encoder
 
@@ -268,22 +273,23 @@ class CTGan(nn.Module):
     
     def preprocess_and_load_data(self, ctgan_data_set, batch_size)-> DataLoader:
         data = ctgan_data_set.dataframe()
-        conditiond_encoded = self.cond_encoder(data)
+        conditiond_encoded = self.cond_encoder.get_cond_from_data(data)
         data_encoded = self.data_encoder(data)
 
         dataset = torch.utils.data.TensorDataset(
-            torch.tensor(data_encoded.values, dtype=torch.float32), 
+            data_encoded, 
             conditiond_encoded
         )
+
         return DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     def preprocess_and_load_train_test(self, ctgan_data_set, batch_size, train_size = 0.8): #-> Tuple(torch.dataloader()): #TODO
         data = ctgan_data_set.dataframe()
-        conditiond_encoded = self.cond_encoder(data)
+        conditiond_encoded = self.cond_encoder.get_cond_from_data(data)
         data_encoded = self.data_encoder(data)
         
         dataset = torch.utils.data.TensorDataset(
-            torch.tensor(data_encoded.values, dtype=torch.float32), 
+            data_encoded, 
             conditiond_encoded
         )
         train_dataset, test_dataset = random_split(dataset, [train_size, 1-train_size])
@@ -292,17 +298,12 @@ class CTGan(nn.Module):
         return train_loader, test_loader
 
 
-    def train_classifier(self, dataset : CTGan_data_set, train_size:float = 0.8):
-
-        self.classifier_batch_size = 1 #Todo 
+    def train_classifier(self, dataset : CTGan_data_set, train_size:float = 0.8): 
 
         train_loader, test_loader = self.preprocess_and_load_train_test(ctgan_data_set=dataset, batch_size=self.classifier_batch_size, train_size=train_size)
         self.classifier.fit(train_loader=train_loader, test_loader=test_loader, lr=self.classifier_lr, opt_betas=self.classifier_opt_betas, epochs = self.classifier_n_iter, patience=self.classifier_patience) # loss=self.classifier_loss
 
         
-
-
-
     def fit(self, ctgan_data_set: CTGan_data_set):
         """
 
@@ -313,11 +314,13 @@ class CTGan(nn.Module):
 
         if not (self.generator and self.discriminator and self.classifier):
 
+            self.cond_cols = ctgan_data_set.cond_cols()
             self.cond_encoder = Cond_Encoder(
                 ctgan_data_set.dataframe(),
+                cond_cols=self.cond_cols,
                 categorical_columns=ctgan_data_set.cat_cols(),
                 numeric_columns=ctgan_data_set.num_cols(),
-                ordinal_columns=ctgan_data_set.ord_cols()
+                ordinal_columns=ctgan_data_set.ord_cols(),
             )
             self.data_encoder = Data_Encoder(
                 ctgan_data_set.dataframe(),
@@ -326,7 +329,7 @@ class CTGan(nn.Module):
                 ordinal_columns=ctgan_data_set.ord_cols()
             )
 
-            self.output_space =  self.data_encoder.encodet_dim() 
+            self.output_space =  self.data_encoder.encode_dim() 
             self.n_units_conditional =  self.cond_encoder.condition_dim() 
 
             self.generator = Generator(
@@ -381,110 +384,125 @@ class CTGan(nn.Module):
 
         #TODO Del this lin
         self.classifier_n_iter = 1
+        self.train_classifier(ctgan_data_set)
+
+        self.discriminator_num_steps = 1
+        self.generator_num_steps = 1
+        ####todo
 
         data_loader = self.preprocess_and_load_data(ctgan_data_set, self.batch_size)
 
-        self.train_classifier(ctgan_data_set)
-
-        optim_generator = torch.optim.Adam(generator.net, lr=self.generator_lr, betas = self.generator_opt_betas)
-        optim_discriminator = torch.optim.Adam(discriminator.net, lr=self.discriminator_lr, betas = self.discriminator_opt_betas)
+        optim_generator = torch.optim.Adam(generator.net.parameters(), lr=self.generator_lr, betas = self.generator_opt_betas)
+        optim_discriminator = torch.optim.Adam(discriminator.net.parameters(), lr=self.discriminator_lr, betas = self.discriminator_opt_betas)
 
         self.generator.train()
         self.discriminator.train()
 
         for epoch in range(1, self.n_epochs+1):
 
-            for X in data_loader:
+            for X, cond in data_loader:
 
                 X_real = X.to(device) 
+                cond = cond.to(device)
+                #data_cond = torch.cat([X_real, cond], dim=1)
+                batch_size =  X_real.size(0)
 
-                # TODO hier die conditions von den echten daten noch laden und schauen wie man das macht mit dennen von den generierten cond vlt einfach auch die conditions von den echten daten rein dann muss er das selbe generieren und wenn nicht hat der discriminator ein einfaches spiel 
-
-                y_real = label_real(self.batch_size).to(device)
-                y_fake = label_fake(self.batch_size).to(device)
-
-                #*** train discriminator ******************************************
-                for k in range(self.discriminator_num_steps):
-                    # -- train with real data
-                    y_hat_real = discriminator(X_real)
-                    loss_real = self.discriminator_nonlin_out(y_hat_real, y_real)
-
-                    # --- train with fake data
-                    X_fake = generator.generate(self.batch_size) #TODO condition mit hinein 
-                    y_hat_fake = discriminator(X_fake)
-                    if self.clipping_value > 0:
-                        torch.nn.utils.clip_grad_norm_(
-                            self.discriminator.parameters(), self.clipping_value
-                        )
-                    loss_fake = self.discriminator_nonlin_out(y_hat_fake, y_fake)
-
-                    # --- update 
+                #*** train discrim ******************************************
+                for k in range(self.discriminator_num_steps): 
+                    z = torch.randn(batch_size, self.n_units_latent, device=device) # noise vec 
+                    
+                    noise_input = torch.cat([z, cond], dim=1)
+                    X_fake = generator.forward(noise_input)
+                    
+                    y_hat_real = discriminator(torch.cat([X_real, cond], dim=1))
+                    y_hat_fake = discriminator(torch.cat([X_fake, cond], dim=1))
+                    loss_critic = wasserstein_loss(y_hat_real, y_hat_fake)
+                    
+                    # Add gradient penalty if you don't want to use it set lambda_gradient_penalty = 0
+                    gp = gradient_penalty(discriminator, torch.cat([X_real, cond], dim=1), torch.cat([X_fake, cond], dim=1), device)
+                    loss_critic += self.lambda_gradient_penalty * gp
                     optim_discriminator.zero_grad()
-                    loss = 0.5*(loss_real + loss_fake)
-                    loss.backward()
-                    if self.clipping_value > 0:
-                        torch.nn.utils.clip_grad_norm_(
-                            self.discriminator.parameters(), self.clipping_value
-                        )
+                    loss_critic.backward()
+                    if self.clipping_value > 0: # if grad_penalty the loss will be norm of 1 
+                        torch.nn.utils.clip_grad_norm_(discriminator.parameters(), self.clipping_value) # with grad clipping the loss is not Lipschitz continuous use gradient_penalty instead
                     optim_discriminator.step()
-
-                    # --- compile results (keep last metrics)
-                    result = [loss.item(), *get_results(y_hat_real, y_hat_fake)]
+        
 
                 #*** train generator ***********************************************
                 for k in range(self.generator_num_steps):
                     # --- train with fake images
+                    z = torch.randn(batch_size, self.n_units_latent, device=device) # noise vec
+                    noise_input = torch.cat([z, cond], dim=1)
+                    X_fake = generator.forward(noise_input)
                     
-
-                    X_fake = generator.forward(self.batch_size) #TODO hier halt einen noise vektor reingeben der Batch_size mal latent space hat so  
-                    y_hat = discriminator(X_fake)
-                    loss = self.discriminator_nonlin_out(y_hat, y_real)
+                    cond_detached = cond.detach()
+                    y_hat = discriminator(torch.cat([X_fake, cond_detached], dim=1))
+                    loss_g = -torch.mean(y_hat)
 
                     optim_generator.zero_grad()
-                    loss.backward()
+                    loss_g.backward() # hier fehler
                     if self.clipping_value > 0:
-                        torch.nn.utils.clip_grad_norm_(
-                            self.generator.parameters(), self.clipping_value
-                        )
-
+                        torch.nn.utils.clip_grad_norm_(self.generator.parameters(), self.clipping_value)
                     optim_generator.step()
 
                     # --- result: keep last loss
-                    loss_g = loss.item()
+                    loss_g_value = loss_g.item()
 
-                result.insert(1, loss_g)
+
+                #result.insert(1, loss_g)
             
-            if not epoch % self.n_iter_print:
-                pass #TODO
-                
-            if not epoch % self.n_iter_checkpoint:
-                pass #TODO
+            if self.n_iter_print:
+                # TODO: Add code for printing/logging
+                pass
+
+            if self.n_iter_checkpoint:
+                # TODO: Add code for saving model checkpoints
+                pass
 
     
-    def gen(self, num_samples = None, cond_df = pd.DataFrame):
+    def gen(self, num_samples=None, cond_df=pd.DataFrame()):
+        """
+        Generate samples using the generator model. Either `num_samples` or `cond_df` should be provided.
 
+        Parameters:
+        - num_samples: The number of samples to generate if not using a condition.
+        - cond_df: A DataFrame containing the conditional columns for generation.
+
+        Returns:
+        - Generated data as a DataFrame.
+        """
+        
+        # Check if both num_samples and cond_df are missing
         if num_samples is None and cond_df.empty:
-            raise ValueError("Please provide either num_samples or the cond_df to generate data")
+            raise ValueError("Please provide either num_samples or cond_df to generate data.")
         
-        if cond_df.empty is True:
-            gen_data_raw = self.generator.generate(num_samples)
-            gen_data =self.data_encoder.inverse_prep(gen_data_raw)
+        # If cond_df is empty, generate random conditions
+        if cond_df.empty:
+            random_cond = self.cond_encoder.generate_random_condition(num_samples)
+            gen_data_raw = self.generator.generate(num_samples, random_cond)
+            gen_data = self.data_encoder.inv_transform(gen_data_raw)
             return gen_data
         
-        else: 
-            if cond_df.shape[1] != len(self.n_units_conditional):
-                return #Todo
-                 
-            
-            if set(cond_df.columns.values.tolist()) != set(self.cond_cols):
-                return #TODO
-                
-            
-            gen_data_raw = self.generator.generate(count=cond_df.shape[0], cond=cond_df).dataframe()
-            gen_data =self.data_encoder.inverse_prep(gen_data_raw)
+        else:
+            # Check if cond_df contains all required columns (ignoring the order)
+            if len(self.cond_cols) != len(cond_df.columns):
+                raise ValueError(f"cond_df is missing a coloumn, following columns are required: {self.cond_cols}")
 
+            print("cond_df", cond_df)
+
+            cond_df = self.cond_encoder.transform(cond_df)
+
+            if cond_df.shape[1] != self.n_units_conditional:
+                raise ValueError(f"Expected {self.n_units_conditional} conditional columns, but got {cond_df.shape[1]}")
+            
+            gen_data_raw = self.generator.generate(n_samples=cond_df.shape[0], condition=cond_df)
+            gen_data_np = gen_data_raw.detach().cpu().numpy() 
+            gen_data_df = pd.DataFrame(gen_data_np) 
+
+            gen_data = self.data_encoder.inv_transform(gen_data_df)
             
             return gen_data
+
     
 
 
@@ -493,3 +511,59 @@ class CTGan(nn.Module):
 
     def load(self, path):
         pass #TODO model.load_state_dict(torch.load(PATH, weights_only=True, map_location="cuda:0"))  # it is not so easy to load a model trained on cuda on your cpu 
+
+
+
+
+#
+
+from torch import autograd
+'''
+def gradient_penalty(net_dis, X_real, X_fake, device):
+    bs = X_real.size(0)
+
+    # interpolations
+    alpha = torch.rand(bs, 1, 1, 1, device=device)
+    X = alpha * X_real.detach() + (1 - alpha) * X_fake.detach()
+    X.requires_grad_(True)
+    
+    # discriminator output of interpolations
+    y_hat = net_dis(X).sum()
+    
+    # compute gradients 
+    gradients = autograd.grad(outputs=y_hat, inputs=X, create_graph=True, retain_graph=True)[0]
+
+    gradients = gradients.view(bs, -1)
+    return ((gradients.norm(2, dim=1) - 1)**2).sum()
+'''
+
+
+
+from torch import autograd
+
+def gradient_penalty(discriminator, X_real_cond, X_fake_cond, device):
+    bs = X_real_cond.size(0)
+
+    alpha = torch.rand(bs, 1, device=device)
+    alpha = alpha.expand_as(X_real_cond)  
+
+    X_interpolated = alpha * X_real_cond.detach() + (1 - alpha) * X_fake_cond.detach()
+    X_interpolated.requires_grad_(True)
+    
+    y_hat_interpolated = discriminator(X_interpolated)
+    
+    grad_outputs = torch.ones_like(y_hat_interpolated, device=device)
+    gradients = autograd.grad(
+        outputs=y_hat_interpolated,
+        inputs=X_interpolated,
+        grad_outputs=grad_outputs,
+        create_graph=True,
+        retain_graph=True
+    )[0]
+
+    gradients = gradients.view(bs, -1)
+    gradient_norm = gradients.norm(2, dim=1)
+
+    gradient_penalty = ((gradient_norm - 1) ** 2).mean()
+
+    return gradient_penalty
