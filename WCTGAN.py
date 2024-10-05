@@ -76,7 +76,6 @@ class Generator(nn.Module):
             noise = torch.randn(n_samples, self.n_units_lat, device=self.device) 
             generator_input = torch.cat([noise, condition], dim=1) 
             gen_data = self.forward(generator_input) 
-
         return gen_data
 
 
@@ -283,11 +282,11 @@ class CTGan(nn.Module):
 
         return DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    def preprocess_and_load_train_test(self, ctgan_data_set, batch_size, train_size = 0.8): #-> Tuple(torch.dataloader()): #TODO
+    def preprocess_and_load_train_test_classifier(self, ctgan_data_set, batch_size, train_size = 0.8): #-> Tuple(torch.dataloader()): #TODO
         data = ctgan_data_set.dataframe()
         conditiond_encoded = self.cond_encoder.get_cond_from_data(data)
-        data_encoded = self.data_encoder(data)
-        
+        data_encoded = self.data_encoder.transform_without_condition(data) 
+
         dataset = torch.utils.data.TensorDataset(
             data_encoded, 
             conditiond_encoded
@@ -300,7 +299,7 @@ class CTGan(nn.Module):
 
     def train_classifier(self, dataset : CTGan_data_set, train_size:float = 0.8): 
 
-        train_loader, test_loader = self.preprocess_and_load_train_test(ctgan_data_set=dataset, batch_size=self.classifier_batch_size, train_size=train_size)
+        train_loader, test_loader = self.preprocess_and_load_train_test_classifier(ctgan_data_set=dataset, batch_size=self.classifier_batch_size, train_size=train_size)
         self.classifier.fit(train_loader=train_loader, test_loader=test_loader, lr=self.classifier_lr, opt_betas=self.classifier_opt_betas, epochs = self.classifier_n_iter, patience=self.classifier_patience) # loss=self.classifier_loss
 
         
@@ -324,10 +323,13 @@ class CTGan(nn.Module):
             )
             self.data_encoder = Data_Encoder(
                 ctgan_data_set.dataframe(),
+                cond_cols=self.cond_cols,
                 categorical_columns=ctgan_data_set.cat_cols(),
                 numeric_columns=ctgan_data_set.num_cols(),
-                ordinal_columns=ctgan_data_set.ord_cols()
+                ordinal_columns=ctgan_data_set.ord_cols(),
             )
+
+            #self.encoded_data_cond_index = self.data_encoder.get_cond_index()
 
             self.output_space =  self.data_encoder.encode_dim() 
             self.n_units_conditional =  self.cond_encoder.condition_dim() 
@@ -357,7 +359,7 @@ class CTGan(nn.Module):
             )
 
             self.classifier = Classifier(
-                classifier_n_units_in = self.output_space,
+                classifier_n_units_in = self.output_space - self.n_units_conditional,
                 classifier_n_units_out_per_category = self.cond_encoder.get_units_per_column(),
                 classifier_n_layers_hidden =  self.classifier_n_layers_hidden, 
                 classifier_n_units_hidden = self.classifier_n_units_hidden, 
@@ -415,7 +417,7 @@ class CTGan(nn.Module):
                     X_fake = generator.forward(noise_input)
                     
                     y_hat_real = discriminator(torch.cat([X_real, cond], dim=1))
-                    y_hat_fake = discriminator(torch.cat([X_fake, cond], dim=1))
+                    y_hat_fake = discriminator(torch.cat([X_fake, cond], dim=1)) # macht das üpberhuapt sinn das nochmal mit hinein zu gben das ja eh schon mit drinnen oder?
                     loss_critic = wasserstein_loss(y_hat_real, y_hat_fake)
                     
                     # Add gradient penalty if you don't want to use it set lambda_gradient_penalty = 0
@@ -437,10 +439,15 @@ class CTGan(nn.Module):
                     
                     cond_detached = cond.detach()
                     y_hat = discriminator(torch.cat([X_fake, cond_detached], dim=1))
-                    loss_g = -torch.mean(y_hat)
+                    loss_g = - torch.mean(y_hat)
 
+                    # take the classifier and predict the condition and add the diverence betwean the real cond and the pred cond to the condition  
+                    loss_cond = self.compute_condition_loss(X_fake.detach().cpu().numpy(), cond)
+                    
+                    total_loss = loss_g + loss_cond
+                    
                     optim_generator.zero_grad()
-                    loss_g.backward() # hier fehler
+                    total_loss.backward() 
                     if self.clipping_value > 0:
                         torch.nn.utils.clip_grad_norm_(self.generator.parameters(), self.clipping_value)
                     optim_generator.step()
@@ -458,6 +465,30 @@ class CTGan(nn.Module):
             if self.n_iter_checkpoint:
                 # TODO: Add code for saving model checkpoints
                 pass
+
+    def compute_condition_loss(self, X, real_cond):
+        """
+        Predicts the condition using the classifier, calculates the difference between the real and predicted condition,
+        and appends this difference to the base loss.
+
+        Args:
+        - X (Tensor): The gen data used for prediction.
+        - real_condition (Tensor): The true condition.
+
+        Returns:
+        - loss_condition (Tensor): The classification loss (condition prediction loss).
+        """
+        x_transformed = self.data_encoder.inv_transform(X)
+
+        x_classifier = x_transformed.drop(columns=self.cond_cols)
+        x_classifier_tensor = torch.tensor(x_classifier.values, dtype=torch.float32)
+
+        pred = self.classifier.predict(x_classifier_tensor)
+        pred = torch.stack(pred).view_as(real_cond)
+
+        loss_condition = torch.nn.functional.binary_cross_entropy_with_logits(pred.float(), real_cond.float())
+    
+        return loss_condition
 
     
     def gen(self, num_samples=None, cond_df=pd.DataFrame()):
@@ -487,8 +518,6 @@ class CTGan(nn.Module):
             # Check if cond_df contains all required columns (ignoring the order)
             if len(self.cond_cols) != len(cond_df.columns):
                 raise ValueError(f"cond_df is missing a coloumn, following columns are required: {self.cond_cols}")
-
-            print("cond_df", cond_df)
 
             cond_df = self.cond_encoder.transform(cond_df)
 

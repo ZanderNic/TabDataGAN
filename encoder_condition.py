@@ -24,12 +24,13 @@ class Cond_Encoder:
         self.ordinal_columns = [col for col in ordinal_columns if col in cond_cols]
         self.numeric_columns = [col for col in numeric_columns if col in cond_cols]
 
-        self.columns_in_order = [col for col in df.columns if col in categorical_columns + ordinal_columns + numeric_columns]
+        self.columns_in_order = [col for col in df.columns if col in self.categorical_columns + self.ordinal_columns + self.numeric_columns]
         self.encoders_in_order = []
         self.units_in_order = []
         self.encoder_n_dim = 0
         
         self.preprocess_conditions(df)
+
 
     def preprocess_conditions(self, condition_df: pd.DataFrame):
         """
@@ -53,6 +54,7 @@ class Cond_Encoder:
         
         self.encoder_n_dim = sum(self.units_in_order)
 
+
     def get_cond_from_data(self, df:pd.DataFrame):
         """
             This funktion retourns the cond loaded if the howle data frame is provided
@@ -67,9 +69,12 @@ class Cond_Encoder:
         df_encoded[self.categorical_columns] = df_encoded[self.categorical_columns].astype(str)
         encoded_list = []
 
-        for i, encoder in enumerate(self.encoders_in_order):
-            encoded_data = encoder.transform(df_encoded.iloc[:, [i]])
-            encoded_list.append(torch.tensor(encoded_data, dtype=torch.float32))
+        for encoder, column in zip(self.encoders_in_order, self.columns_in_order):
+            if column in df_encoded.columns:
+                encoded_data = encoder.transform(df_encoded[[column]])
+                encoded_list.append(torch.tensor(encoded_data, dtype=torch.float32))
+            else:
+                raise ValueError(f"Column {column} is not found in the input DataFrame.")
 
         condition_encoded_final = torch.cat(encoded_list, dim=1)
         
@@ -107,7 +112,7 @@ class Cond_Encoder:
         transform_cond = self.transform(random_conditions_df)
 
         return transform_cond
-    
+
 
     def get_units_per_column(self):
         """

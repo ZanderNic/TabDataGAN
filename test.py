@@ -8,23 +8,21 @@ from WCTGAN import CTGan
 from dataset import CTGan_data_set
 
 
-
-
 iris = load_iris(as_frame=True)
 df = iris['frame']
-
 
 print(df)
 
 data_set = CTGan_data_set(
     data=df,
-    cond_cols=["target"],  
+    cond_cols=["target", "petal width (cm)"],  
 )
 
 gan = CTGan(n_units_latent=5)
 gan.fit(data_set)
 
-cond_df = pd.DataFrame([1]*100)
+cond_df = pd.DataFrame([{"target" : 1}]*100)
+
 
 
 print(gan.gen(100, cond_df=cond_df))

@@ -14,8 +14,9 @@ class Data_Encoder(object):
             categorical_columns: list, 
             ordinal_columns: list, 
             numeric_columns: list, 
+            cond_cols: list,
             ordinal_cols_max_cluster: int = 50,
-            random_state: int = None
+            random_state: int = None,
     ):
         self.categorical_columns = categorical_columns
         self.ordinal_columns = ordinal_columns
@@ -25,6 +26,7 @@ class Data_Encoder(object):
         self.encoders_in_order = []
         self.units_in_order = []
         self.encoder_n_dim = 0
+        self.cond_cols = cond_cols
 
         self.random_state = random_state
         self.ordinal_cols_max_cluster = ordinal_cols_max_cluster #todo ist nicht eingebaut
@@ -65,10 +67,33 @@ class Data_Encoder(object):
             encoded_data = encoder.transform(df_encoded[[column]])
             encoded_list.append(torch.tensor(encoded_data, dtype=torch.float32))
 
-        condition_encoded_final = torch.cat(encoded_list, dim=1)
+        data_encoded_final = torch.cat(encoded_list, dim=1)
 
-        return condition_encoded_final
-        
+        return data_encoded_final
+    
+    def transform_without_condition(self, df: pd.DataFrame):
+        """
+        Transforms all columns except the condition columns (self.cond_cols).
+        """
+        if list(df.columns) != list(self.columns_in_order):
+            raise ValueError("The columns of the DataFrame are not in the expected order.")
+
+        columns_to_transform = [col for col in self.columns_in_order if col not in self.cond_cols]
+
+        df_encoded = df.copy()        
+        categorical_to_transform = [col for col in self.categorical_columns if col in columns_to_transform]
+        df_encoded[categorical_to_transform] = df_encoded[categorical_to_transform].astype(str)
+
+        encoded_list = []
+        for encoder, column in zip(self.encoders_in_order, self.columns_in_order):
+            if column in columns_to_transform:  
+                encoded_data = encoder.transform(df_encoded[[column]])
+                encoded_list.append(torch.tensor(encoded_data, dtype=torch.float32))
+
+        transformed_data = torch.cat(encoded_list, dim=1)
+
+        return transformed_data
+
 
     def inv_transform(self, data):
         df = pd.DataFrame(data)
@@ -86,6 +111,9 @@ class Data_Encoder(object):
             index_units += units
 
         return df_decoded
+
+
+
 
 
     def encode_dim(self):
