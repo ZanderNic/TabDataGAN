@@ -52,7 +52,7 @@ class Classifier(nn.Module):
     def __init__(
         self, 
         classifier_n_units_in: int,
-        classifier_n_units_out_per_category: list,  
+        classifier_n_units_out_per_category: list,  # This is used to determine if it is a categorical column or a normal colum
         classifier_n_layers_hidden: int = 3, 
         classifier_n_units_hidden: int = 4, 
         classifier_nonlin: str = "leaky_relu",
@@ -68,6 +68,7 @@ class Classifier(nn.Module):
         self.num_categories = len(classifier_n_units_out_per_category)
         self.classifier_n_units_out_per_category = classifier_n_units_out_per_category
         self.net = nn.Sequential()
+
         self.acc_output = np.cumsum([0] + classifier_n_units_out_per_category).tolist()
 
         classifier_nonlin = get_nolin_akt(classifier_nonlin)
@@ -102,10 +103,9 @@ class Classifier(nn.Module):
                 data = data.to(self.device)
                 conditions = conditions.to(self.device)
 
-                outputs = self.forward(data)  # Liste mit den Ausgaben pro Kategorie
-                loss_value = sum([loss_func(output, torch.argmax(conditions[:, self.acc_output[i]: self.acc_output[i+1]], dim=1))
-                                  for i, output in enumerate(outputs)])
-                
+                outputs = self.forward(data) 
+                loss_value = sum([loss_func(output, torch.argmax(conditions[:, self.acc_output[i]: self.acc_output[i+1]], dim=1)) for i, output in enumerate(outputs)])
+        
                 data_loss += loss_value.item()
                 for i, output in enumerate(outputs):
                     _, predicted = torch.max(output, 1)
@@ -130,7 +130,6 @@ class Classifier(nn.Module):
         model.train()
 
         optimizer = torch.optim.Adam(self.net.parameters(), lr=lr, betas=opt_betas)
-        loss_func = self.loss
 
         early_stopping = EarlyStopping(patience, track_model=True, mode="min")
 
@@ -140,36 +139,54 @@ class Classifier(nn.Module):
                 data = data.to(self.device)
                 conditions = conditions.to(self.device)
                 outputs = self.forward(data)
-                loss_value = sum([loss_func(output, torch.argmax(conditions[:, self.acc_output[i]: self.acc_output[i+1]], dim=1)) # TODO die contions sind nicht so sondern einfach 1d sodas man halt die hier nicht so indizieren kann
-                                  for i, output in enumerate(outputs)])
+
+                loss_value = 0
+                for i, output in enumerate(outputs):
+                    if self.classifier_n_units_out_per_category[i] > 1:
+                        loss_value += nn.CrossEntropyLoss()(output, torch.argmax(conditions[:, self.acc_output[i]:self.acc_output[i+1]], dim=1))
+                    else:
+                        loss_value += nn.MSELoss()(output, conditions[:, self.acc_output[i]:self.acc_output[i+1]])
 
                 optimizer.zero_grad()
                 loss_value.backward()
                 optimizer.step()
 
             loss, acc_test = self.score(test_loader)
-            early_stopping(loss, model)  # Track the first category for early stopping #TODO hier accuracy nehmen 
+            early_stopping(loss, model)  
             if early_stopping.stop:
                 print('Terminated by early stopping')
                 break
 
         if early_stopping.track_model:
             model.load_state_dict(early_stopping.best_model)
-        
+
         loss_test, acc_test = self.score(test_loader)
         print(f"Training of the Classifier finished with accuracy: {acc_test} and loss: {loss_test}")
 
         return loss_test, acc_test
+
 
     def forward(self, x):
         x = self.net(x)
         outputs = [layer(x) for layer in self.output_layers]  # Separate Ausgaben pro Kategorie
         return outputs
 
+
     def predict(self, x):
         self.eval()
         with torch.no_grad():
             x = x.to(self.device)
             outputs = self.forward(x)
-            predictions = [torch.argmax(torch.softmax(output, dim=1), dim=1) for output in outputs]  # Softmax für jede Kategorie
-        return predictions
+            predictions = []
+
+            for i, output in enumerate(outputs):
+                if self.classifier_n_units_out_per_category[i] > 1: 
+                    softmax_output = torch.softmax(output, dim=1)
+                    one_hot_pred = torch.zeros_like(softmax_output)
+                    one_hot_pred.scatter_(1, torch.argmax(softmax_output, dim=1, keepdim=True), 1)
+                    predictions.append(one_hot_pred)
+                else:  
+                    predictions.append(output)
+                    
+            return torch.cat(predictions, dim=1)
+

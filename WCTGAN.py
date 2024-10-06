@@ -1,6 +1,6 @@
 # stdlib
 from typing import Any, Callable, List, Optional, Tuple
-
+import time
 
 # third party
 import torch
@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader, random_split
 # Projects imports
 from dataset import CTGan_data_set
 from Classifier import Classifier
-from CTGan_utils import get_nolin_akt, get_loss_function
+from CTGan_utils import get_nolin_akt, get_loss_function, format_time, format_time_with_h
 from encoder_condition import Cond_Encoder
 from encoder_data import Data_Encoder
 
@@ -139,14 +139,14 @@ class CTGan(nn.Module):
     def __init__(
         self,
 
-        n_units_latent: int, 
+        n_units_latent: int = 100, 
         
         # Generator
         generator_n_layers_hidden: int = 2,
         generator_n_units_hidden: int = 250,
         generator_nonlin: str = "relu",
         generator_nonlin_out = "sigmoid", # This function given here should return a number between ]0; 1] because the data is processed and scaled between ]0; 1]
-        generator_num_steps: int = 500,
+        generator_num_steps: int = 5,
         generator_batch_norm: bool = False,
         generator_dropout: float = 0,
         generator_lr: float = 2e-4,
@@ -185,11 +185,10 @@ class CTGan(nn.Module):
         batch_size: int = 64,
         random_state: int = None,
         clipping_value: int = 0,
-        lambda_gradient_penalty: float = 10,
-        lambda_identifiability_penalty: float = 0.1,
-        grad_penalty: bool = True,
+        lambda_gradient_penalty: float = 1,
+        lambda_condition_loss_weight: float = 1,
         
-        n_epochs: int = 1000,
+        n_epochs: int = 300,
         n_iter_print: int = 10,
         n_iter_checkpoint: int = None,
         early_stopping_patience: int = 20,
@@ -254,8 +253,7 @@ class CTGan(nn.Module):
         self.batch_size = batch_size
         self.clipping_value = clipping_value
         self.lambda_gradient_penalty = lambda_gradient_penalty # to tourn of gradient penalty set this to 0 
-        self.lambda_identifiability_penalty = lambda_identifiability_penalty #TODO
-        
+        self.lambda_condition_loss_weight = lambda_condition_loss_weight  # weighting of the conditional loss that is determit by the classifier
 
         self.random_state = random_state
         self.max_categorical_encoder = max_categorical_encoder
@@ -357,7 +355,7 @@ class CTGan(nn.Module):
                 discriminator_dropout= self.discriminator_dropout, 
                 device= self.device, 
             )
-
+           
             self.classifier = Classifier(
                 classifier_n_units_in = self.output_space - self.n_units_conditional,
                 classifier_n_units_out_per_category = self.cond_encoder.get_units_per_column(),
@@ -380,91 +378,97 @@ class CTGan(nn.Module):
         # for better readability
         generator = self.generator
         discriminator = self.discriminator
-        classifier = self.classifier
         device = self.device
 
 
         #TODO Del this lin
         self.classifier_n_iter = 1
         self.train_classifier(ctgan_data_set)
-
-        self.discriminator_num_steps = 1
-        self.generator_num_steps = 1
         ####todo
 
         data_loader = self.preprocess_and_load_data(ctgan_data_set, self.batch_size)
 
-        optim_generator = torch.optim.Adam(generator.net.parameters(), lr=self.generator_lr, betas = self.generator_opt_betas)
-        optim_discriminator = torch.optim.Adam(discriminator.net.parameters(), lr=self.discriminator_lr, betas = self.discriminator_opt_betas)
+        optim_generator = torch.optim.Adam(generator.net.parameters(), lr=self.generator_lr, betas=self.generator_opt_betas)
+        optim_discriminator = torch.optim.Adam(discriminator.net.parameters(), lr=self.discriminator_lr, betas=self.discriminator_opt_betas)
 
         self.generator.train()
         self.discriminator.train()
 
-        for epoch in range(1, self.n_epochs+1):
+        loss_critic_list = list()
+        loss_gen_list = list()
 
+        total_time = 0  # Variable to track total elapsed time
+
+        for epoch in range(1, self.n_epochs + 1):
+            start_time = time.time()  # Start time of the current epoch
+
+            epoch_loss_critic = 0.0
+            epoch_loss_gen = 0.0
             for X, cond in data_loader:
-
-                X_real = X.to(device) 
+                X_real = X.to(device)
                 cond = cond.to(device)
-                #data_cond = torch.cat([X_real, cond], dim=1)
-                batch_size =  X_real.size(0)
+                batch_size = X_real.size(0)
 
-                #*** train discrim ******************************************
-                for k in range(self.discriminator_num_steps): 
-                    z = torch.randn(batch_size, self.n_units_latent, device=device) # noise vec 
-                    
+                # *** Train discriminator ***
+                for k in range(self.discriminator_num_steps):
+                    z = torch.randn(batch_size, self.n_units_latent, device=device)  # noise vec
+
                     noise_input = torch.cat([z, cond], dim=1)
                     X_fake = generator.forward(noise_input)
-                    
+
                     y_hat_real = discriminator(torch.cat([X_real, cond], dim=1))
-                    y_hat_fake = discriminator(torch.cat([X_fake, cond], dim=1)) # macht das üpberhuapt sinn das nochmal mit hinein zu gben das ja eh schon mit drinnen oder?
+                    y_hat_fake = discriminator(torch.cat([X_fake, cond], dim=1))
                     loss_critic = wasserstein_loss(y_hat_real, y_hat_fake)
-                    
-                    # Add gradient penalty if you don't want to use it set lambda_gradient_penalty = 0
+
+                    # Add gradient penalty if necessary
                     gp = gradient_penalty(discriminator, torch.cat([X_real, cond], dim=1), torch.cat([X_fake, cond], dim=1), device)
                     loss_critic += self.lambda_gradient_penalty * gp
                     optim_discriminator.zero_grad()
                     loss_critic.backward()
-                    if self.clipping_value > 0: # if grad_penalty the loss will be norm of 1 
-                        torch.nn.utils.clip_grad_norm_(discriminator.parameters(), self.clipping_value) # with grad clipping the loss is not Lipschitz continuous use gradient_penalty instead
                     optim_discriminator.step()
-        
 
-                #*** train generator ***********************************************
+                epoch_loss_critic += loss_critic.item()
+
+                # *** Train generator ***
                 for k in range(self.generator_num_steps):
-                    # --- train with fake images
-                    z = torch.randn(batch_size, self.n_units_latent, device=device) # noise vec
+                    z = torch.randn(batch_size, self.n_units_latent, device=device)  # noise vec
                     noise_input = torch.cat([z, cond], dim=1)
                     X_fake = generator.forward(noise_input)
-                    
+
                     cond_detached = cond.detach()
                     y_hat = discriminator(torch.cat([X_fake, cond_detached], dim=1))
-                    loss_g = - torch.mean(y_hat)
+                    loss_g = -torch.mean(y_hat)
 
-                    # take the classifier and predict the condition and add the diverence betwean the real cond and the pred cond to the condition  
+                    # Calculate condition loss and update total loss
                     loss_cond = self.compute_condition_loss(X_fake.detach().cpu().numpy(), cond)
-                    
-                    total_loss = loss_g + loss_cond
-                    
+                    total_loss = loss_g + self.lambda_condition_loss_weight * loss_cond
+
                     optim_generator.zero_grad()
-                    total_loss.backward() 
-                    if self.clipping_value > 0:
-                        torch.nn.utils.clip_grad_norm_(self.generator.parameters(), self.clipping_value)
+                    total_loss.backward()
                     optim_generator.step()
 
-                    # --- result: keep last loss
-                    loss_g_value = loss_g.item()
+                epoch_loss_gen += total_loss.item()
 
+            epoch_loss_critic /= len(data_loader)
+            epoch_loss_gen /= len(data_loader)
 
-                #result.insert(1, loss_g)
-            
-            if self.n_iter_print:
-                # TODO: Add code for printing/logging
-                pass
+            loss_critic_list.append(epoch_loss_critic)
+            loss_gen_list.append(epoch_loss_gen)
 
-            if self.n_iter_checkpoint:
+            epoch_time = time.time() - start_time
+            total_time += epoch_time
+
+            avg_time_per_epoch = total_time / epoch
+            remaining_time = avg_time_per_epoch * (self.n_epochs - epoch)
+
+            if epoch % self.n_iter_print == 0:
+                print(f"Epoch {epoch:4d} || Loss Critic: {epoch_loss_critic:7.4f} || Loss Gen: {epoch_loss_gen:7.4f} || Avg Time/Epoch: {format_time(avg_time_per_epoch)} || Remaining Time: {format_time_with_h(remaining_time)}")
+
+            if self.n_iter_checkpoint and epoch % self.n_iter_checkpoint == 0:
                 # TODO: Add code for saving model checkpoints
                 pass
+
+        return loss_critic_list, loss_gen_list
 
     def compute_condition_loss(self, X, real_cond):
         """
@@ -484,7 +488,6 @@ class CTGan(nn.Module):
         x_classifier_tensor = torch.tensor(x_classifier.values, dtype=torch.float32)
 
         pred = self.classifier.predict(x_classifier_tensor)
-        pred = torch.stack(pred).view_as(real_cond)
 
         loss_condition = torch.nn.functional.binary_cross_entropy_with_logits(pred.float(), real_cond.float())
     

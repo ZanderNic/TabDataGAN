@@ -1,7 +1,19 @@
-import copy
-
 from torch import nn
 import numpy as np
+import time
+
+def format_time(seconds):
+    minutes = int((seconds % 3600) // 60)
+    seconds_int = int(seconds % 60)
+    milliseconds = int((seconds % 1) * 1000)
+    return f"{minutes:02d}min:{seconds_int:02d}s:{milliseconds:03d}ms"
+
+def format_time_with_h(seconds):
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds_int = int(seconds % 60)
+    milliseconds = int((seconds % 1) * 1000)
+    return f"{hours:02d}h:{minutes:02d}min:{seconds_int:02d}s:{milliseconds:03d}ms"
 
 
 def get_nolin_akt(name : str):
