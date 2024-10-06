@@ -12,17 +12,15 @@ from torch.utils.data import DataLoader, random_split
 
 
 # Projects imports
-from dataset import CTGan_data_set
-from Classifier import Classifier
-from CTGan_utils import get_nolin_akt, get_loss_function, format_time, format_time_with_h
-from encoder_condition import Cond_Encoder
-from encoder_data import Data_Encoder
+from ..Data.dataset import CTGan_data_set
+from .Classifier import Classifier
+from .CTGan_utils import get_nolin_akt, get_loss_function, format_time, format_time_with_h
+from ..Data.encoder_condition import Cond_Encoder
+from ..Data.encoder_data import Data_Encoder
+
 
 # Default parameter
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu' # If device is not set try to use cuda else cpu
-
-
-
 
 class Generator(nn.Module):
     

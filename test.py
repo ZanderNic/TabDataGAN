@@ -4,8 +4,12 @@ from sklearn.datasets import load_iris
 import matplotlib.pyplot as plt
 
 # This Projekt imports
-from WCTGAN import CTGan
-from dataset import CTGan_data_set
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from src.Model.WCTGAN import CTGan
+from src.Data.dataset import CTGan_data_set
 
 
 iris = load_iris(as_frame=True)
