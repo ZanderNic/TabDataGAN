@@ -1,6 +1,7 @@
-from torch import nn
-import numpy as np
-import time
+from torch import nn, autograd
+import torch
+
+
 
 def format_time(seconds):
     minutes = int((seconds % 3600) // 60)
@@ -39,3 +40,33 @@ def get_loss_function(name : str):
     else:
         raise ValueError(f"Unknown loss function: {name}")
 
+
+def gradient_penalty(discriminator, X_real_cond, X_fake_cond, device):
+    bs = X_real_cond.size(0)
+
+    alpha = torch.rand(bs, 1, device=device)
+    alpha = alpha.expand_as(X_real_cond)  
+
+    X_interpolated = alpha * X_real_cond.detach() + (1 - alpha) * X_fake_cond.detach()
+    X_interpolated.requires_grad_(True)
+    
+    y_hat_interpolated = discriminator(X_interpolated)
+    
+    grad_outputs = torch.ones_like(y_hat_interpolated, device=device)
+    gradients = autograd.grad(
+        outputs=y_hat_interpolated,
+        inputs=X_interpolated,
+        grad_outputs=grad_outputs,
+        create_graph=True,
+        retain_graph=True
+    )[0]
+
+    gradients = gradients.view(bs, -1)
+    gradient_norm = gradients.norm(2, dim=1)
+
+    gradient_penalty = ((gradient_norm - 1) ** 2).mean()
+
+    return gradient_penalty
+
+def wasserstein_loss(y_real, y_fake):
+    return torch.mean(y_fake) - torch.mean(y_real)

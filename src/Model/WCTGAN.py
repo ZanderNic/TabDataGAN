@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader, random_split
 # Projects imports
 from ..Data.dataset import CTGan_data_set
 from .Classifier import Classifier
-from .CTGan_utils import get_nolin_akt, get_loss_function, format_time, format_time_with_h
+from .CTGan_utils import get_nolin_akt, get_loss_function, format_time, format_time_with_h, gradient_penalty, wasserstein_loss
 from ..Data.encoder_condition import Cond_Encoder
 from ..Data.encoder_data import Data_Encoder
 
@@ -46,7 +46,7 @@ class Generator(nn.Module):
 
         generator_nonlin = get_nolin_akt(generator_nonlin)
         generator_nonlin_out = get_nolin_akt(generator_nonlin_out)
-        # First Layer
+        
         self.net.append(nn.Linear(generator_n_units_in + generator_n_units_conditional, generator_n_units_hidden))
         if generator_batch_norm:
             self.net.append(nn.BatchNorm1d(generator_n_units_hidden))
@@ -118,8 +118,6 @@ class Discriminator(nn.Module):
     def forward(self, x):
         return self.net(x).view(-1)
 
-def wasserstein_loss(y_real, y_fake):
-    return torch.mean(y_fake) - torch.mean(y_real)
 
 
 class CTGan(nn.Module):
@@ -325,8 +323,6 @@ class CTGan(nn.Module):
                 ordinal_columns=ctgan_data_set.ord_cols(),
             )
 
-            #self.encoded_data_cond_index = self.data_encoder.get_cond_index()
-
             self.output_space =  self.data_encoder.encode_dim() 
             self.n_units_conditional =  self.cond_encoder.condition_dim() 
 
@@ -366,7 +362,6 @@ class CTGan(nn.Module):
                 loss= self.classifier_loss,
             )
 
-            # self.discriminator_nonlin_out = nn.BCELoss(reduction='sum') #TODO das ist nicht das discriminator nolin out
             self.cond_cols = ctgan_data_set.cond_cols()     # conditional columns 
             self.cat_cols = ctgan_data_set.cat_cols()       # categorical columns
             self.num_cols = ctgan_data_set.num_cols()       # numeric columns 
@@ -378,12 +373,8 @@ class CTGan(nn.Module):
         discriminator = self.discriminator
         device = self.device
 
-
-        #TODO Del this lin
-        self.classifier_n_iter = 1
         self.train_classifier(ctgan_data_set)
-        ####todo
-
+        
         data_loader = self.preprocess_and_load_data(ctgan_data_set, self.batch_size)
 
         optim_generator = torch.optim.Adam(generator.net.parameters(), lr=self.generator_lr, betas=self.generator_opt_betas)
@@ -395,10 +386,10 @@ class CTGan(nn.Module):
         loss_critic_list = list()
         loss_gen_list = list()
 
-        total_time = 0  # Variable to track total elapsed time
+        total_time = 0  # to track total elapsed time
 
         for epoch in range(1, self.n_epochs + 1):
-            start_time = time.time()  # Start time of the current epoch
+            start_time = time.time()  # Start time of current epoch
 
             epoch_loss_critic = 0.0
             epoch_loss_gen = 0.0
@@ -409,8 +400,7 @@ class CTGan(nn.Module):
 
                 # *** Train discriminator ***
                 for k in range(self.discriminator_num_steps):
-                    z = torch.randn(batch_size, self.n_units_latent, device=device)  # noise vec
-
+                    z = torch.randn(batch_size, self.n_units_latent, device=device) 
                     noise_input = torch.cat([z, cond], dim=1)
                     X_fake = generator.forward(noise_input)
 
@@ -541,59 +531,3 @@ class CTGan(nn.Module):
 
     def load(self, path):
         pass #TODO model.load_state_dict(torch.load(PATH, weights_only=True, map_location="cuda:0"))  # it is not so easy to load a model trained on cuda on your cpu 
-
-
-
-
-#
-
-from torch import autograd
-'''
-def gradient_penalty(net_dis, X_real, X_fake, device):
-    bs = X_real.size(0)
-
-    # interpolations
-    alpha = torch.rand(bs, 1, 1, 1, device=device)
-    X = alpha * X_real.detach() + (1 - alpha) * X_fake.detach()
-    X.requires_grad_(True)
-    
-    # discriminator output of interpolations
-    y_hat = net_dis(X).sum()
-    
-    # compute gradients 
-    gradients = autograd.grad(outputs=y_hat, inputs=X, create_graph=True, retain_graph=True)[0]
-
-    gradients = gradients.view(bs, -1)
-    return ((gradients.norm(2, dim=1) - 1)**2).sum()
-'''
-
-
-
-from torch import autograd
-
-def gradient_penalty(discriminator, X_real_cond, X_fake_cond, device):
-    bs = X_real_cond.size(0)
-
-    alpha = torch.rand(bs, 1, device=device)
-    alpha = alpha.expand_as(X_real_cond)  
-
-    X_interpolated = alpha * X_real_cond.detach() + (1 - alpha) * X_fake_cond.detach()
-    X_interpolated.requires_grad_(True)
-    
-    y_hat_interpolated = discriminator(X_interpolated)
-    
-    grad_outputs = torch.ones_like(y_hat_interpolated, device=device)
-    gradients = autograd.grad(
-        outputs=y_hat_interpolated,
-        inputs=X_interpolated,
-        grad_outputs=grad_outputs,
-        create_graph=True,
-        retain_graph=True
-    )[0]
-
-    gradients = gradients.view(bs, -1)
-    gradient_norm = gradients.norm(2, dim=1)
-
-    gradient_penalty = ((gradient_norm - 1) ** 2).mean()
-
-    return gradient_penalty

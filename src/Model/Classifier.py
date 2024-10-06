@@ -11,8 +11,8 @@ from torch.utils.data import DataLoader, random_split
 
 
 # Projects imports
-from src.Data.dataset import CTGan_data_set
-from src.Model.CTGan_utils import get_nolin_akt, get_loss_function
+from ..Data.dataset import CTGan_data_set
+from ..Model.CTGan_utils import get_nolin_akt, get_loss_function
 
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu' # If device is not set try to use cuda else cpu
@@ -45,7 +45,6 @@ class EarlyStopping:
             self.counter += 1
 
         self.stop = self.counter >= self.patience
-
 
 
 class Classifier(nn.Module):
@@ -168,7 +167,7 @@ class Classifier(nn.Module):
 
     def forward(self, x):
         x = self.net(x)
-        outputs = [layer(x) for layer in self.output_layers]  # Separate Ausgaben pro Kategorie
+        outputs = [layer(x) for layer in self.output_layers]  
         return outputs
 
 

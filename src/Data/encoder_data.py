@@ -113,9 +113,6 @@ class Data_Encoder(object):
         return df_decoded
 
 
-
-
-
     def encode_dim(self):
         return self.encoder_n_dim 
     
