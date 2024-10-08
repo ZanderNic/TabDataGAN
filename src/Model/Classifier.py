@@ -58,7 +58,7 @@ class Classifier(nn.Module):
         classifier_batch_norm: bool = False, 
         classifier_dropout: float = 0.001,
         loss: str = "cross_entropy",
-        device: Any = "cuda", 
+        device: Any = DEVICE, 
     ):
         super().__init__()
 
