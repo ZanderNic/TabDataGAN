@@ -137,6 +137,7 @@ class Classifier(nn.Module):
             for data, conditions in train_loader:
                 data = data.to(self.device)
                 conditions = conditions.to(self.device)
+                  
                 outputs = self.forward(data)
 
                 loss_value = 0
@@ -166,7 +167,9 @@ class Classifier(nn.Module):
 
 
     def forward(self, x):
-        x = self.net(x)
+        net = self.net.to(self.device)
+        self.output_layers.to(self.device)
+        x = net(x)
         outputs = [layer(x) for layer in self.output_layers]  
         return outputs
 
