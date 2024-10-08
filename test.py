@@ -2,10 +2,28 @@ import numpy as np
 import pandas as pd
 from sklearn.datasets import load_iris
 import matplotlib.pyplot as plt
-
-# This Projekt imports
 import sys
 import os
+
+def plot_gan_losses(crit_loss, gen_loss,
+                    critic_color='blue',
+                    gen_color='orange',  
+                    save_path="train_loss.png"
+    ):
+    
+    plt.figure(figsize=(10, 6))
+
+    plt.plot(crit_loss, label="Critic Loss", color=critic_color, linestyle='-', linewidth=1.5)
+    plt.plot(gen_loss, label="Generator Loss", color=gen_color, linestyle='-', linewidth=1.5)
+  
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.title("Train and Validation Losses for Generator and Critic")
+    plt.legend()
+
+    plt.savefig(save_path)
+
+# This Projekt imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.Model.WCTGAN import CTGan
@@ -24,14 +42,11 @@ data_set = CTGan_data_set(
 )
 
 gan = CTGan()
-loss_crit, loss_gan  = gan.fit(data_set)
 
-plt.plot(loss_crit, label="Critic Loss")
-plt.plot(loss_gan, label="Generator Loss")
-plt.xlabel("Epochs")
-plt.ylabel("Loss")
-plt.legend()
-plt.savefig("train.png")
+crit_loss, gen_loss = gan.fit(data_set)
+
+plot_gan_losses(crit_loss, gen_loss)
+
 
 cond_df = pd.DataFrame([{"target" : 1}]*100)
 

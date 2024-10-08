@@ -153,7 +153,7 @@ class Classifier(nn.Module):
             loss, acc_test = self.score(test_loader)
             early_stopping(loss, model)  
             if early_stopping.stop:
-                print('Terminated by early stopping')
+                print('Classifier Terminated by early stopping')
                 break
 
         if early_stopping.track_model:

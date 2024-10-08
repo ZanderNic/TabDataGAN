@@ -171,7 +171,7 @@ class CTGan(nn.Module):
         classifier_dropout: float = 0.001,
         classifier_opt_betas: tuple = (0.9, 0.99),
         classifier_loss: str = "cross_entropy",
-        classifier_patience : int = 10,
+        classifier_patience : int = 25,
         classifier_batch_size : int = 128,
 
         # training
@@ -261,6 +261,7 @@ class CTGan(nn.Module):
         """
         #TODO
     
+
     def preprocess_and_load_data(self, ctgan_data_set, batch_size)-> DataLoader:
         data = ctgan_data_set.dataframe()
         conditiond_encoded = self.cond_encoder.get_cond_from_data(data)
@@ -272,6 +273,28 @@ class CTGan(nn.Module):
         )
 
         return DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+    def preprocess_and_load_data_train_test(self, ctgan_data_set, batch_size, train_size = 0.8):
+        """
+        
+        """
+        data = ctgan_data_set.dataframe()
+        conditiond_encoded = self.cond_encoder.get_cond_from_data(data)
+        data_encoded = self.data_encoder(data)
+
+        dataset = torch.utils.data.TensorDataset(
+            data_encoded, 
+            conditiond_encoded
+        )
+
+        train_size = int(train_size * len(dataset))  
+        val_size = len(dataset) - train_size  
+
+        train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader =  DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
+        return train_loader, val_loader
+
 
     def preprocess_and_load_train_test_classifier(self, ctgan_data_set, batch_size, train_size = 0.8): #-> Tuple(torch.dataloader()): #TODO
         data = ctgan_data_set.dataframe()
@@ -285,7 +308,6 @@ class CTGan(nn.Module):
         train_size = int(train_size * len(dataset))  
         test_size = len(dataset) - train_size  
 
-
         train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
         test_loader =  DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
@@ -295,7 +317,7 @@ class CTGan(nn.Module):
     def train_classifier(self, dataset : CTGan_data_set, train_size:float = 0.8): 
 
         train_loader, test_loader = self.preprocess_and_load_train_test_classifier(ctgan_data_set=dataset, batch_size=self.classifier_batch_size, train_size=train_size)
-        self.classifier.fit(train_loader=train_loader, test_loader=test_loader, lr=self.classifier_lr, opt_betas=self.classifier_opt_betas, epochs = self.classifier_n_iter, patience=self.classifier_patience) # loss=self.classifier_loss
+        self.classifier.fit(train_loader=train_loader, test_loader=test_loader, lr=self.classifier_lr, opt_betas=self.classifier_opt_betas, epochs = self.classifier_n_iter, patience=self.classifier_patience) 
 
         
     def fit(self, ctgan_data_set: CTGan_data_set):
@@ -375,7 +397,7 @@ class CTGan(nn.Module):
 
         self.train_classifier(ctgan_data_set)
         
-        data_loader = self.preprocess_and_load_data(ctgan_data_set, self.batch_size)
+        train_loader = self.preprocess_and_load_data(ctgan_data_set, self.batch_size)
 
         optim_generator = torch.optim.Adam(generator.net.parameters(), lr=self.generator_lr, betas=self.generator_opt_betas)
         optim_discriminator = torch.optim.Adam(discriminator.net.parameters(), lr=self.discriminator_lr, betas=self.discriminator_opt_betas)
@@ -383,17 +405,16 @@ class CTGan(nn.Module):
         self.generator.train()
         self.discriminator.train()
 
-        loss_critic_list = list()
-        loss_gen_list = list()
+        loss_critic_list_train, loss_gen_list_train = list(), list()
 
-        total_time = 0  # to track total elapsed time
+        total_time = 0  # total time
 
         for epoch in range(1, self.n_epochs + 1):
-            start_time = time.time()  # Start time of current epoch
+            start_time = time.time() 
 
-            epoch_loss_critic = 0.0
-            epoch_loss_gen = 0.0
-            for X, cond in data_loader:
+            epoch_loss_critic_train = 0.0
+            epoch_loss_gen_train = 0.0
+            for X, cond in train_loader:
                 X_real = X.to(device)
                 cond = cond.to(device)
                 batch_size = X_real.size(0)
@@ -414,7 +435,7 @@ class CTGan(nn.Module):
                     loss_critic.backward()
                     optim_discriminator.step()
 
-                epoch_loss_critic += loss_critic.item()
+                epoch_loss_critic_train += loss_critic.item()
 
                 # *** Train generator ***
                 for k in range(self.generator_num_steps):
@@ -426,59 +447,108 @@ class CTGan(nn.Module):
                     y_hat = discriminator(torch.cat([X_fake, cond_detached], dim=1))
                     loss_g = -torch.mean(y_hat)
 
-                    # Calculate condition loss and update total loss
-                    loss_cond = self.compute_condition_loss(X_fake.detach().cpu().numpy(), cond)
+                    loss_cond = self.compute_condition_loss(X_fake.detach().cpu().numpy(), cond)   # Calculate condition loss and add to total loss
                     total_loss = loss_g + self.lambda_condition_loss_weight * loss_cond
 
                     optim_generator.zero_grad()
                     total_loss.backward()
                     optim_generator.step()
 
-                epoch_loss_gen += total_loss.item()
+                epoch_loss_gen_train += total_loss.item()
 
-            epoch_loss_critic /= len(data_loader)
-            epoch_loss_gen /= len(data_loader)
+            epoch_loss_critic_train /= len(train_loader)
+            epoch_loss_gen_train /= len(train_loader)
 
-            loss_critic_list.append(epoch_loss_critic)
-            loss_gen_list.append(epoch_loss_gen)
-
+            loss_critic_list_train.append(epoch_loss_critic_train)
+            loss_gen_list_train.append(epoch_loss_gen_train)
+            
             epoch_time = time.time() - start_time
-            total_time += epoch_time
-
-            avg_time_per_epoch = total_time / epoch
-            remaining_time = avg_time_per_epoch * (self.n_epochs - epoch)
 
             if epoch % self.n_iter_print == 0:
-                print(f"Epoch {epoch:4d} || Loss Critic: {epoch_loss_critic:7.4f} || Loss Gen: {epoch_loss_gen:7.4f} || Avg Time/Epoch: {format_time(avg_time_per_epoch)} || Remaining Time: {format_time_with_h(remaining_time)}")
+                total_time += epoch_time
+                avg_time_per_epoch = total_time / epoch
+                remaining_time = avg_time_per_epoch * (self.n_epochs - epoch)
+
+                print(f"Epoch {epoch:4d} || Loss Critic: {epoch_loss_critic_train:7.4f} || Loss Gen: {epoch_loss_gen_train:7.4f} || Avg Time/Epoch: {format_time(avg_time_per_epoch)} || Remaining Time: {format_time_with_h(remaining_time)}")
 
             if self.n_iter_checkpoint and epoch % self.n_iter_checkpoint == 0:
                 # TODO: Add code for saving model checkpoints
                 pass
 
-        return loss_critic_list, loss_gen_list
+        return loss_critic_list_train, loss_gen_list_train
+
 
     def compute_condition_loss(self, X, real_cond):
-        """
-        Predicts the condition using the classifier, calculates the difference between the real and predicted condition,
-        and appends this difference to the base loss.
-
-        Args:
-        - X (Tensor): The gen data used for prediction.
-        - real_condition (Tensor): The true condition.
-
-        Returns:
-        - loss_condition (Tensor): The classification loss (condition prediction loss).
-        """
         x_transformed = self.data_encoder.inv_transform(X)
-
-        x_classifier = x_transformed.drop(columns=self.cond_cols)
-        x_classifier_tensor = torch.tensor(x_classifier.values, dtype=torch.float32)
+        x_classifier_tensor = self.data_encoder.transform_without_condition(x_transformed)
 
         pred = self.classifier.predict(x_classifier_tensor)
-
         loss_condition = torch.nn.functional.binary_cross_entropy_with_logits(pred.float(), real_cond.float())
     
         return loss_condition
+
+
+    def evaluate_discriminator(self, data_loader: DataLoader):
+        discriminator = self.discriminator
+        generator = self.generator
+        device = self.device
+        
+        discriminator.eval()
+        generator.eval()
+
+        total_loss_critic = 0.0
+
+        with torch.no_grad():  
+            for X, cond in data_loader:
+                X_real = X.to(device)
+                cond = cond.to(device)
+                batch_size = X_real.size(0)
+
+                z = torch.randn(batch_size, self.n_units_latent, device=device) # Noise input for the generator
+                noise_input = torch.cat([z, cond], dim=1) # noise with cond 
+                X_fake = generator.forward(noise_input)
+
+                y_hat_real = discriminator(torch.cat([X_real, cond], dim=1))
+                y_hat_fake = discriminator(torch.cat([X_fake, cond], dim=1))
+                loss_critic = wasserstein_loss(y_hat_real, y_hat_fake)
+
+                total_loss_critic += loss_critic.item()
+
+        avg_loss_critic = total_loss_critic / len(data_loader)
+
+        return avg_loss_critic
+
+
+    def evaluate_generator(self, test_loader: DataLoader):
+        # better read
+        generator = self.generator
+        discriminator = self.discriminator
+        device = self.device
+        
+        generator.eval()
+        discriminator.eval()
+
+        total_loss_gen = 0.0
+        with torch.no_grad():  
+            for X, cond in test_loader:
+                cond = cond.to(device)
+                batch_size = X.size(0)
+
+                z = torch.randn(batch_size, self.n_units_latent, device=device) 
+                noise_input = torch.cat([z, cond], dim=1)
+                X_fake = generator.forward(noise_input)
+
+                y_hat = discriminator(torch.cat([X_fake, cond], dim=1))
+                loss_g = -torch.mean(y_hat)
+
+                loss_cond = self.compute_condition_loss(X_fake.detach().cpu().numpy(), cond)    # Condition loss
+                total_loss = loss_g + self.lambda_condition_loss_weight * loss_cond
+
+                total_loss_gen += total_loss.item()
+
+        avg_loss_gen = total_loss_gen / len(test_loader)
+
+        return avg_loss_gen
 
     
     def gen(self, num_samples=None, cond_df=pd.DataFrame()):
