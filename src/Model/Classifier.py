@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader, random_split
 
-
 # Projects imports
 from ..Data.dataset import CTGan_data_set
 from ..Model.CTGan_utils import get_nolin_act, get_loss_function
