@@ -65,7 +65,8 @@ class Generator(nn.Module):
         self.net.append(generator_nonlin_out)
 
 
-    def forward(self, x): #TODO hier machen das man halt auch einen batch druch geben kann 
+    def forward(self, x):
+        self.net.to(self.device)
         return self.net(x)
 
     def generate(self, n_samples, condition): 
@@ -116,6 +117,7 @@ class Discriminator(nn.Module):
 
 
     def forward(self, x):
+        self.net.to(self.device)
         return self.net(x).view(-1)
 
 
