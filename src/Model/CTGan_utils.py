@@ -17,7 +17,7 @@ def format_time_with_h(seconds):
     return f"{hours:02d}h:{minutes:02d}min:{seconds_int:02d}s:{milliseconds:03d}ms"
 
 
-def get_nolin_akt(name : str):
+def get_nolin_act(name : str):
     if name == "relu":
         return nn.ReLU()
     elif name == "leaky_relu":
