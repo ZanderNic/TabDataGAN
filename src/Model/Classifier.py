@@ -168,6 +168,7 @@ class Classifier(nn.Module):
     def forward(self, x):
         net = self.net.to(self.device)
         self.output_layers.to(self.device)
+        x = x.to(self.device)
         x = net(x)
         outputs = [layer(x) for layer in self.output_layers]  
         return outputs
