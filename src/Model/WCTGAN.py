@@ -463,9 +463,9 @@ class CTGan(nn.Module):
             loss_gen_list_train.append(epoch_loss_gen_train)
             
             epoch_time = time.time() - start_time
-
+            total_time += epoch_time
+            
             if epoch % self.n_iter_print == 0:
-                total_time += epoch_time
                 avg_time_per_epoch = total_time / epoch
                 remaining_time = avg_time_per_epoch * (self.n_epochs - epoch)
 
