@@ -22,6 +22,76 @@ from ..Data.encoder_data import Data_Encoder
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu' # If device is not set try to use cuda else cpu
 
 
+
+def find_w(input_size):
+    n = 0
+    while True:
+        w = 2 * n 
+        if w ** 2 > input_size:
+            extra = w**2 - input_size  
+            return w, extra
+        n += 1
+
+class Conv_Generator(nn.Module):
+    """
+    A implementation of a Generator that uses Conv but still for Tabular data
+    
+    """
+    def __init__(
+        self, 
+        generator_n_units_in,
+        generator_n_units_conditional,
+        generator_n_units_out, 
+        generator_n_layers_hidden: int = 3, 
+        generator_n_kernels_hidden: int = 200, 
+        generator_nonlin: str = "leaky_relu", 
+        generator_nonlin_out: str = "leaky_relu", 
+        generator_batch_norm: bool = False, 
+        generator_dropout: float = 0.001, 
+        device: Any = DEVICE, 
+    ):
+        super().__init__()
+        
+        self.n_units_lat = generator_n_units_in
+
+        self.device = device
+        self.net = nn.Sequential()
+    
+        generator_nonlin = get_nolin_act(generator_nonlin)
+        generator_nonlin_out = get_nolin_act(generator_nonlin_out)
+        
+        # find the number of (w,h where w=h and w = 2*n where n element N) of the 2d tehnsor that we can fit the input into 
+        self.w, self.extra = find_w(generator_n_units_in + generator_n_units_conditional)
+
+        self.net.append(nn.Linear(generator_n_units_in + generator_n_units_conditional, w*w))
+
+        for _ in range(generator_n_layers_hidden - 1):
+            pass
+            # self.conv_net.append(nn.Linear(discriminator_n_units_hidden, discriminator_n_units_hidden))
+            # if discriminator_batch_norm:
+            #     self.net.append(nn.BatchNorm1d(discriminator_n_units_hidden))
+            # self.net.append(discriminator_nonlin)
+            # self.net.append(nn.Dropout(discriminator_dropout))
+        
+
+
+    def forward(self, x): 
+        x = x.append(torch.tensor(np.zeros([self.extra, x.shape[0]])))
+        x = x.reshape([x.shape[0], self.w, self.w])
+        self.net.to(self.device)
+        x.to(self.device)
+        return self.net(x) 
+
+    def generate(self, n_samples, condition): 
+        self.eval()  
+        with torch.no_grad():
+            noise = torch.randn(n_samples, self.n_units_lat, device=self.device).to(self.device) 
+            condition = condition.to(self.device)
+            generator_input = torch.cat([noise, condition], dim=1) 
+            gen_data = self.forward(generator_input) 
+        return gen_data
+
+
 class Generator(nn.Module):
     
     def __init__(
