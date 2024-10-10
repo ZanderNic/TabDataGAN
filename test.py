@@ -28,12 +28,11 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.Model.WCTGAN import CTGan
 from src.Data.dataset import CTGan_data_set
-
+from src.Benchmark.benchmark import Benchmark
 
 iris = load_iris(as_frame=True)
 df = iris['frame']
 
-print(df)
 
 data_set = CTGan_data_set(
     data=df,
@@ -48,6 +47,12 @@ crit_loss, gen_loss = gan.fit(data_set)
 plot_gan_losses(crit_loss, gen_loss)
 
 
-cond_df = pd.DataFrame([{"target" : 1}]*100)
+cond_df = pd.DataFrame([{"target" : 1}]*150)
 
-print(gan.gen(100, cond_df=cond_df))
+syn_df = gan.gen(150, cond_df=cond_df)
+
+print(syn_df)
+
+benchmark = Benchmark()
+
+print(benchmark.mean_rfc(df, syn_df))
