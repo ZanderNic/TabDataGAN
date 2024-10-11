@@ -206,7 +206,6 @@ class Discriminator(nn.Module):
         return self.net(x).view(-1)
 
 
-
 class CTGan(nn.Module):
     """
 
@@ -229,7 +228,7 @@ class CTGan(nn.Module):
         generator_batch_norm: bool = False,
         generator_dropout: float = 0,
         generator_lr: float = 0.0001,
-        generator_weight_decay: float = 0.001,
+        generator_weight_decay: float = 0.0001,
         generator_residual: bool = True,
         generator_opt_betas: tuple = (0.9, 0.99),
         generator_extra_penalties: list = [],  #TODO 
@@ -494,6 +493,8 @@ class CTGan(nn.Module):
 
         total_time = 0  # total time
 
+        print("Starting Training of the Gan")
+
         for epoch in range(1, self.n_epochs + 1):
             start_time = time.time() 
 
@@ -513,7 +514,7 @@ class CTGan(nn.Module):
                     X_fake = generator.forward(noise_input)
 
                     y_hat_real = discriminator(torch.cat([X_real, cond], dim=1))
-                    y_hat_fake = discriminator(torch.cat([X_fake, cond], dim=1))
+                    y_hat_fake = discriminator(torch.cat([X_fake, cond], dim=1)) # TODO vlt sollte der disc nicht nochmal auch die cond bekommen bei beiden beim einen ist sie ja schon dabei beim andern sollte er sich ja ned drum kümmern
                     loss_critic = wasserstein_loss(y_hat_real, y_hat_fake)
 
                     gp = gradient_penalty(discriminator, torch.cat([X_real, cond], dim=1), torch.cat([X_fake, cond], dim=1), device) # Add gradient penalty 
@@ -534,10 +535,10 @@ class CTGan(nn.Module):
                     y_hat = discriminator(torch.cat([X_fake, cond_detached], dim=1))
                     loss_g = -torch.mean(y_hat)
 
-                    loss_cond = self.compute_condition_loss(X_fake.detach().cpu().numpy(), cond)   # Calculate condition loss and add to total loss
+                    loss_cond = self.compute_condition_loss(X_fake.detach().cpu().numpy(), cond, X_real)   # Calculate condition loss and add to total loss
 
                     #cond_loss_weight = self.calculate_cond_loss_weight(epoch)
-
+                    
                     total_loss = loss_g + self.lambda_condition_loss_weight * loss_cond    # total_loss = loss_g + self.calculate_cond_loss_weight(epoch) * loss_cond
 
                     optim_generator.zero_grad()
@@ -570,14 +571,15 @@ class CTGan(nn.Module):
         return loss_critic_list_train, loss_gen_list_train
 
 
-    def compute_condition_loss(self, X, real_cond):
-        x_transformed = self.data_encoder.inv_transform(X)
-        x_classifier_tensor = self.data_encoder.transform_without_condition(x_transformed)
+    def compute_condition_loss(self, gen_data:torch.tensor, real_cond:torch.tensor, test):
+        x_gen = self.data_encoder.inv_transform(gen_data)
+        x_gen_without_cond = self.data_encoder.transform_without_condition(x_gen)
 
-        pred = self.classifier.forward(x_classifier_tensor)
+        pred = self.classifier.forward(x_gen_without_cond)
         pred_tensor = torch.cat(pred, dim=1)
+
         loss_condition = torch.nn.functional.binary_cross_entropy_with_logits(pred_tensor.float(), real_cond.float()) 
-    
+
         return loss_condition
 
 
@@ -698,3 +700,4 @@ class CTGan(nn.Module):
 
     def load(self, path):
         pass #TODO model.load_state_dict(torch.load(PATH, weights_only=True, map_location="cuda:0"))  # it is not so easy to load a model trained on cuda on your cpu 
+
