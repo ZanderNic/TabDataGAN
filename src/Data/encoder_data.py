@@ -23,6 +23,8 @@ class Data_Encoder(object):
         self.numeric_columns = numeric_columns
 
         self.columns_in_order = [col for col in raw_df.columns if col in categorical_columns + ordinal_columns + numeric_columns]
+        self.d_types_in_order = raw_df[self.columns_in_order].dtypes.tolist()
+
         self.encoders_in_order = []
         self.units_in_order = []
         self.encoder_n_dim = 0
@@ -35,7 +37,9 @@ class Data_Encoder(object):
 
 
     def preprocess_columns(self, df: pd.DataFrame):
-          
+        
+        df = df.copy()
+
         for column in self.columns_in_order:
 
             if column in self.categorical_columns:
@@ -104,10 +108,10 @@ class Data_Encoder(object):
         df_decoded = pd.DataFrame()
         index_units = 0 
 
-        for encoder, units, column  in zip(self.encoders_in_order, self.units_in_order, self.columns_in_order):   
+        for encoder, units, column, dtype in zip(self.encoders_in_order, self.units_in_order, self.columns_in_order, self.d_types_in_order):   
             data_segment = df.iloc[:, index_units:index_units + units]
             decoded_data = encoder.inverse_transform(data_segment)
-            df_decoded[column] = decoded_data.flatten()
+            df_decoded[column] = decoded_data.flatten().astype(dtype)
             index_units += units
 
         return df_decoded
