@@ -70,3 +70,24 @@ def gradient_penalty(discriminator, X_real_cond, X_fake_cond, device):
 
 def wasserstein_loss(y_real, y_fake):
     return torch.mean(y_fake) - torch.mean(y_real)
+
+
+def find_w(input_size):
+    n = 0
+    while True:
+        w = 2 * n 
+        if w ** 2 > input_size:
+            extra = w**2 - input_size  
+            return w, extra
+        n += 1
+
+
+def init_weights(m):
+    if isinstance(m, nn.Linear):
+        nn.init.xavier_uniform_(m.weight)  
+        if m.bias is not None:
+            nn.init.zeros_(m.bias)  
+    elif isinstance(m, nn.Conv2d):
+        nn.init.kaiming_normal_(m.weight, a=0.2, nonlinearity='leaky_relu')  # Kaiming initialization for Conv2d layers
+        if m.bias is not None:
+            nn.init.zeros_(m.bias)

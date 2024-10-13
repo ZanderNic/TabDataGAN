@@ -10,8 +10,8 @@ import pandas as pd
 from torch.utils.data import DataLoader, random_split
 
 # Projects imports
-from ..Data.dataset import CTGan_data_set
-from ..Model.CTGan_utils import get_nolin_act, get_loss_function
+from ...Data.dataset import CTGan_data_set
+from ..Gans._gan_utils import get_nolin_act, get_loss_function
 
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu' # If device is not set try to use cuda else cpu

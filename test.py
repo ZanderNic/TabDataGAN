@@ -26,13 +26,18 @@ def plot_gan_losses(crit_loss, gen_loss,
 # This Projekt imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.Model.WCTGAN import CTGan
+from src.Model.Gans.WCTGan import WCTGan
 from src.Data.dataset import CTGan_data_set
 from src.Benchmark.benchmark import Benchmark
+
+from src.Model.Generators.Generator import Conv_Generator
+from src.Model.Critic.critic import Conv_Discriminator
+
 
 iris = load_iris(as_frame=True)
 df = iris['frame']
 
+print(df)
 
 data_set = CTGan_data_set(
     data=df,
@@ -40,19 +45,18 @@ data_set = CTGan_data_set(
     cat_cols=["target"]  
 )
 
-gan = CTGan()
-
-crit_loss, gen_loss = gan.fit(data_set)
-
+wctgan = WCTGan(lambda_condition_loss_weight=0, n_units_latent=100)#generator_class=Conv_Generator, discriminator_class=Conv_Discriminator)
+crit_loss, gen_loss = wctgan.fit(data_set, n_epochs=1000, discriminator_num_steps=35)
 plot_gan_losses(crit_loss, gen_loss)
 
-
-cond_df = pd.DataFrame([{"target" : 1}]*150)
-
-syn_df = gan.gen(150, cond_df=cond_df)
+## Generate new data
+cond_df = pd.DataFrame([{"target" : 1}]*160)
+syn_df = wctgan.gen(160)#cond_df=cond_df)
 
 print(syn_df)
 
+# Benchmark the generated data 
 benchmark = Benchmark()
+mean_rfc = benchmark.mean_rfc(df, syn_df, plot=True)
 
-print(benchmark.mean_rfc(df, syn_df))
+print(f"Mean RFC= {mean_rfc}")

@@ -109,9 +109,8 @@ class Cond_Encoder:
                 random_conditions[column] = np.random.uniform(0, 1, num_samples)
 
         random_conditions_df = pd.DataFrame(random_conditions)
-        transform_cond = self.transform(random_conditions_df)
-
-        return transform_cond
+       
+        return random_conditions_df
 
 
     def get_units_per_column(self):

@@ -11,11 +11,18 @@ from torch.utils.data import DataLoader, random_split
 
 
 # Projects imports
-from ..Data.dataset import CTGan_data_set
-from .Classifier import Classifier
-from .CTGan_utils import get_nolin_act, get_loss_function, format_time, format_time_with_h, gradient_penalty, wasserstein_loss
-from ..Data.encoder_condition import Cond_Encoder
-from ..Data.encoder_data import Data_Encoder
+from .Base_Gan import Base_CTGan
+
+from ..Generators.Generator import Generator
+from ..Critic.critic import Discriminator
+
+from ...Data.dataset import CTGan_data_set
+from ..Extra_Pen.Classifier import Classifier
+from ._gan_utils import get_nolin_act, get_loss_function, format_time, format_time_with_h, gradient_penalty, wasserstein_loss
+from ...Data.encoder_condition import Cond_Encoder
+from ...Data.encoder_data import Data_Encoder
+
+
 
 
 # Default parameter
@@ -23,191 +30,10 @@ DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu' # If device is not set t
 
 
 
-def find_w(input_size):
-    n = 0
-    while True:
-        w = 2 * n 
-        if w ** 2 > input_size:
-            extra = w**2 - input_size  
-            return w, extra
-        n += 1
-
-class  Conv_Generator(nn.Module):
+class WCTGan(Base_CTGan):
     """
-    A implementation of a Generator that uses Conv but still for Tabular data
-    
-    """
-    def __init__(
-        self, 
-        generator_n_units_in,
-        generator_n_units_conditional,
-        generator_n_units_out, 
-        generator_n_layers_hidden: int = 3, 
-        generator_n_units_hidden: int = 64, #  generator_n_kernels_hidden
-        generator_nonlin: str = "leaky_relu", 
-        generator_nonlin_out: str = "leaky_relu", 
-        generator_batch_norm: bool = False, 
-        generator_dropout: float = 0.3, 
-        device: Any = DEVICE, 
-    ):
-        super().__init__()
-        
-        self.n_units_lat = generator_n_units_in
+        WCTGan with extra classifier loss
 
-        self.device = device
-        self.net = nn.Sequential()
-        generator_n_kernels_hidden = generator_n_units_hidden
-        generator_nonlin = get_nolin_act(generator_nonlin)
-        generator_nonlin_out = get_nolin_act(generator_nonlin_out)
-        
-        # find the number of (w,h where w=h and w = 2*n where n element N) of the 2d tehnsor that we can fit the input into 
-        self.w, self.extra = find_w(generator_n_units_in + generator_n_units_conditional)
-
-        self.conv_layers = nn.ModuleList()
-        in_channels = 1  
-        out_channels = generator_n_kernels_hidden
-        
-        for _ in range(generator_n_layers_hidden):
-            self.conv_layers.append(nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1))
-            if generator_batch_norm:
-                self.conv_layers.append(nn.BatchNorm2d(out_channels))
-            self.conv_layers.append(generator_nonlin)
-            self.conv_layers.append(nn.Dropout(generator_dropout))
-            in_channels = out_channels
-        
-        
-        final_conv_output_size = out_channels * self.w * self.w
-        self.final_layer = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(final_conv_output_size, generator_n_units_out),
-            generator_nonlin_out
-        )
-        
-    def forward(self, x):
-        if self.extra > 0:
-            padding = torch.zeros((x.shape[0], self.extra), device=self.device)
-            x = torch.cat([x, padding], dim=1)
-        
-        x = x.view(x.shape[0], 1, self.w, self.w)
-        
-        self.conv_layers.to(self.device)
-        for layer in self.conv_layers:
-            x = layer(x)
-        
-        self.final_layer.to(self.device)
-        x = self.final_layer(x)
-        return x
-    
-    def generate(self, n_samples, condition): 
-        self.eval()  
-        with torch.no_grad():
-            noise = torch.randn(n_samples, self.n_units_lat, device=self.device).to(self.device) 
-            condition = condition.to(self.device)
-            generator_input = torch.cat([noise, condition], dim=1) 
-            gen_data = self.forward(generator_input) 
-        return gen_data 
-
-class Generator(nn.Module):
-    
-    def __init__(
-        self, 
-        generator_n_units_in,
-        generator_n_units_conditional,
-        generator_n_units_out, 
-        generator_n_layers_hidden: int = 3, 
-        generator_n_units_hidden: int = 200, 
-        generator_nonlin: str = "leaky_relu", 
-        generator_nonlin_out: str = "leaky_relu", 
-        generator_batch_norm: bool = False, 
-        generator_dropout: float = 0.001, 
-        device: Any = DEVICE, 
-    ):
-        super().__init__()
-        
-        self.n_units_lat = generator_n_units_in
-
-        self.device = device
-        self.net = nn.Sequential()
-
-        generator_nonlin = get_nolin_act(generator_nonlin)
-        generator_nonlin_out = get_nolin_act(generator_nonlin_out)
-        
-        self.net.append(nn.Linear(generator_n_units_in + generator_n_units_conditional, generator_n_units_hidden))
-        if generator_batch_norm:
-            self.net.append(nn.BatchNorm1d(generator_n_units_hidden))
-
-        self.net.append(generator_nonlin)
-        self.net.append(nn.Dropout(generator_dropout))
-
-        for _ in range(generator_n_layers_hidden - 1):
-                self.net.append(nn.Linear(generator_n_units_hidden, generator_n_units_hidden))
-                if generator_batch_norm:
-                    self.net.append(nn.BatchNorm1d(generator_n_units_hidden))
-                self.net.append(nn.LeakyReLU())
-                self.net.append(nn.Dropout(generator_dropout))
-
-        self.net.append(nn.Linear(generator_n_units_hidden, generator_n_units_out))
-        self.net.append(generator_nonlin_out)
-
-
-    def forward(self, x): 
-        self.net.to(self.device)
-        return self.net(x)
-
-    def generate(self, n_samples, condition): 
-        self.eval()  
-        with torch.no_grad():
-            noise = torch.randn(n_samples, self.n_units_lat, device=self.device).to(self.device) 
-            condition = condition.to(self.device)
-            generator_input = torch.cat([noise, condition], dim=1) 
-            gen_data = self.forward(generator_input) 
-        return gen_data
-
-
-class Discriminator(nn.Module):
-    
-    def __init__(
-        self, 
-        discriminator_n_units_in: int,
-        discriminator_n_units_conditional: int,
-        discriminator_n_layers_hidden: int = 3, 
-        discriminator_n_units_hidden: int = 100, 
-        discriminator_nonlin: str = "leaky_relu", 
-        discriminator_batch_norm: bool = False, 
-        discriminator_dropout: float = 0.001, 
-        device: Any = DEVICE, 
-    ):
-        super().__init__()
-        
-        self.device = device
-        self.net = nn.Sequential()
-
-        discriminator_nonlin = get_nolin_act(discriminator_nonlin)
-
-        self.net.append(nn.Linear(discriminator_n_units_in + discriminator_n_units_conditional, discriminator_n_units_hidden))
-        if discriminator_batch_norm:
-            self.net.append(nn.BatchNorm1d(discriminator_n_units_hidden))
-
-        self.net.append(discriminator_nonlin)
-        self.net.append(nn.Dropout(discriminator_dropout))
-
-        for _ in range(discriminator_n_layers_hidden - 1):
-                self.net.append(nn.Linear(discriminator_n_units_hidden, discriminator_n_units_hidden))
-                if discriminator_batch_norm:
-                    self.net.append(nn.BatchNorm1d(discriminator_n_units_hidden))
-                self.net.append(discriminator_nonlin)
-                self.net.append(nn.Dropout(discriminator_dropout))
-
-        self.net.append(nn.Linear(discriminator_n_units_hidden, 1))  
-
-
-    def forward(self, x):
-        self.net.to(self.device)
-        return self.net(x).view(-1)
-
-
-class CTGan(nn.Module):
-    """
 
         Classifier:  
             the classifier is used to predict the condition, it is trained on the real data and later used for classifiing the conditon for the generated data
@@ -217,32 +43,30 @@ class CTGan(nn.Module):
     def __init__(
         self,
 
-        n_units_latent: int = 150, 
+        n_units_latent: int = 300, 
         
         # Generator
+        generator_class: nn.Module = Generator,
         generator_n_layers_hidden: int = 3,
-        generator_n_units_hidden: int = 200,
         generator_nonlin: str = "relu",
         generator_nonlin_out: str = "sigmoid", # This function given here should return a number between ]0; 1] because the data is processed and scaled between ]0; 1]
-        generator_num_steps: int = 1,
         generator_batch_norm: bool = False,
         generator_dropout: float = 0,
         generator_lr: float = 0.0001,
         generator_weight_decay: float = 0.0001,
         generator_residual: bool = True,
-        generator_opt_betas: tuple = (0.9, 0.99),
+        generator_opt_betas: tuple = (0.5, 0.99),
         generator_extra_penalties: list = [],  #TODO 
         
         # discriminator
+        discriminator_class: nn.Module = Discriminator,
         discriminator_n_layers_hidden: int = 3,
-        discriminator_n_units_hidden: int = 200,
         discriminator_nonlin: str = "leaky_relu",
-        discriminator_num_steps: int = 5,
         discriminator_batch_norm: bool = False,
-        discriminator_dropout: float = 0.1,
+        discriminator_dropout: float = 0,
         discriminator_lr: float =  0.0001,
-        discriminator_weight_decay: float = 1e-3,
-        discriminator_opt_betas: tuple = (0.9, 0.99),
+        discriminator_weight_decay: float = 0.0001,
+        discriminator_opt_betas: tuple = (0.5, 0.99),
         discriminator_extra_penalties: list = [], #TODO
 
         # Classifier
@@ -261,18 +85,12 @@ class CTGan(nn.Module):
         # training
         batch_size: int = 128,
         random_state: int = None,
-        clipping_value: int = 0, # set cliping value or lambda_gradient_penalty the other one to 0 using both of them dosent make sence  
-        lambda_gradient_penalty: float = 10,
-        lambda_condition_loss_weight: float = 1,
-        
-        n_epochs: int = 300,
-        n_iter_print: int = 10,
-        n_iter_checkpoint: int = None,
-        early_stopping_patience: int = 20,
-        early_stopping_patience_metric : Any = None,
         device: Any = DEVICE,
+        lambda_condition_loss_weight = 1,
 
-        max_categorical_encoder= 30 # If a categorical column has more than 30 classes no One Hot encoding is used a general transform for those coloumns will be used (scale them betwean [0 and 1]) 
+        max_categorical_encoder= 30, # If a categorical column has more than 30 classes no One Hot encoding is used a general transform for those coloumns will be used (scale them betwean [0 and 1]) 
+    
+        **kwargs
     ):
         
         super().__init__()
@@ -281,26 +99,28 @@ class CTGan(nn.Module):
 
         self.n_units_latent = n_units_latent
 
+
+        self.generator_class = generator_class
         self.generator_extra_penalties = generator_extra_penalties # todo
+        
 
         self.generator_n_layers_hidden= generator_n_layers_hidden
-        self.generator_n_units_hidden= generator_n_units_hidden
         self.generator_nonlin= generator_nonlin
         self.generator_nonlin_out= generator_nonlin_out
         self.generator_batch_norm= generator_batch_norm
         self.generator_dropout= generator_dropout
-
         self.generator_lr = generator_lr
         self.generator_weight_decay = generator_weight_decay
         self.generator_residual= generator_residual
         self.generator_opt_betas = generator_opt_betas
 
+
+        self.discriminator_class= discriminator_class
+        
         self.discriminator_n_layers_hidden= discriminator_n_layers_hidden
-        self.discriminator_n_units_hidden= discriminator_n_units_hidden
         self.discriminator_nonlin= discriminator_nonlin
         self.discriminator_batch_norm= discriminator_batch_norm
         self.discriminator_dropout= discriminator_dropout
-
         self.discriminator_lr = discriminator_lr
         self.discriminator_weight_decay = discriminator_weight_decay
         self.discriminator_opt_betas = discriminator_opt_betas
@@ -318,22 +138,14 @@ class CTGan(nn.Module):
         self.classifier_patience = classifier_patience
         self.classifier_batch_size = classifier_batch_size
 
-        self.generator_num_steps = generator_num_steps
-        self.discriminator_num_steps = discriminator_num_steps
-        self.n_epochs = n_epochs
-        self.n_iter_print = n_iter_print
-        self.n_iter_checkpoint = n_iter_checkpoint
-  
-        self.early_stopping_patience = early_stopping_patience
-        self.early_stopping_patience_metric = early_stopping_patience_metric
-
-        self.batch_size = batch_size
-        self.clipping_value = clipping_value
-        self.lambda_gradient_penalty = lambda_gradient_penalty # to tourn of gradient penalty set this to 0 
         self.lambda_condition_loss_weight = lambda_condition_loss_weight  # weighting of the conditional loss that is determit by the classifier
 
+        self.batch_size = batch_size
+                
         self.random_state = random_state
         self.max_categorical_encoder = max_categorical_encoder
+
+        self.kwargs = kwargs
 
         self.generator = None
         self.discriminator = None
@@ -343,7 +155,14 @@ class CTGan(nn.Module):
         """
             takes the list generator_extra_penalties and returns all the implemented ones
         """
-        #TODO
+        valid_extra_pen = ["cond_classifier", "cond_match"]
+        
+        generator_extra_penalties = []
+
+        for extra_peneltie in generator_extra_penalties:
+            if extra_peneltie in valid_extra_pen:
+                pass
+
     
 
     def preprocess_and_load_data(self, ctgan_data_set, batch_size)-> DataLoader:
@@ -404,7 +223,16 @@ class CTGan(nn.Module):
         self.classifier.fit(train_loader=train_loader, test_loader=test_loader, lr=self.classifier_lr, opt_betas=self.classifier_opt_betas, epochs = self.classifier_n_iter, patience=self.classifier_patience) 
 
         
-    def fit(self, ctgan_data_set: CTGan_data_set):
+    def fit(self, 
+            ctgan_data_set: CTGan_data_set,
+            n_epochs: int = 300,
+            n_iter_print: int = 10,
+            n_iter_checkpoint: int = None,
+            discriminator_num_steps = 5,
+            generator_num_steps = 1,
+            lambda_gradient_penalty = 10, 
+        
+        ):
         """
 
             Args: 
@@ -433,28 +261,27 @@ class CTGan(nn.Module):
             self.output_space =  self.data_encoder.encode_dim() 
             self.n_units_conditional =  self.cond_encoder.condition_dim() 
 
-            self.generator = Generator(
+            self.generator = self.generator_class(
                 generator_n_units_in= self.n_units_latent,
                 generator_n_units_conditional= self.n_units_conditional,
                 generator_n_units_out= self.output_space, 
-                generator_n_layers_hidden= self.generator_n_layers_hidden, 
-                generator_n_units_hidden= self.generator_n_units_hidden, 
+                generator_n_layers_hidden= self.generator_n_layers_hidden,  
                 generator_nonlin= self.generator_nonlin, 
                 generator_nonlin_out= self.generator_nonlin_out, 
                 generator_batch_norm= self.generator_batch_norm, 
                 generator_dropout= self.generator_dropout, 
                 device= self.device, 
+                **self.kwargs
             )
 
-            self.discriminator = Discriminator(
+            self.discriminator = self.discriminator_class(
                 discriminator_n_units_in= self.output_space,
-                discriminator_n_units_conditional= self.n_units_conditional,
                 discriminator_n_layers_hidden= self.discriminator_n_layers_hidden, 
-                discriminator_n_units_hidden= self.discriminator_n_units_hidden, 
                 discriminator_nonlin= self.discriminator_nonlin, 
                 discriminator_batch_norm= self.discriminator_batch_norm, 
                 discriminator_dropout= self.discriminator_dropout, 
                 device= self.device, 
+                **self.kwargs
             )
            
             self.classifier = Classifier(
@@ -495,7 +322,7 @@ class CTGan(nn.Module):
 
         print("Starting Training of the Gan")
 
-        for epoch in range(1, self.n_epochs + 1):
+        for epoch in range(1, n_epochs + 1):
             start_time = time.time() 
 
             epoch_loss_critic_train = 0.0
@@ -508,17 +335,17 @@ class CTGan(nn.Module):
                 batch_size = X_real.size(0) # better readability
 
                 # *** Train discriminator ***
-                for k in range(self.discriminator_num_steps):
+                for k in range(discriminator_num_steps):
                     z = torch.randn(batch_size, self.n_units_latent, device=device) 
                     noise_input = torch.cat([z, cond], dim=1)
                     X_fake = generator.forward(noise_input)
 
-                    y_hat_real = discriminator(torch.cat([X_real, cond], dim=1))
-                    y_hat_fake = discriminator(torch.cat([X_fake, cond], dim=1)) # TODO vlt sollte der disc nicht nochmal auch die cond bekommen bei beiden beim einen ist sie ja schon dabei beim andern sollte er sich ja ned drum kümmern
+                    y_hat_real = discriminator(torch.cat([X_real], dim=1))
+                    y_hat_fake = discriminator(torch.cat([X_fake], dim=1)) # TODO vlt sollte der disc nicht nochmal auch die cond bekommen bei beiden beim einen ist sie ja schon dabei beim andern sollte er sich ja ned drum kümmern
                     loss_critic = wasserstein_loss(y_hat_real, y_hat_fake)
 
-                    gp = gradient_penalty(discriminator, torch.cat([X_real, cond], dim=1), torch.cat([X_fake, cond], dim=1), device) # Add gradient penalty 
-                    loss_critic += self.lambda_gradient_penalty * gp
+                    gp = gradient_penalty(discriminator, torch.cat([X_real], dim=1), torch.cat([X_fake], dim=1), device) # Add gradient penalty 
+                    loss_critic += lambda_gradient_penalty * gp
                     optim_discriminator.zero_grad()
                     loss_critic.backward()
                     optim_discriminator.step()
@@ -526,13 +353,13 @@ class CTGan(nn.Module):
                 epoch_loss_critic_train += loss_critic.item()
 
                 # *** Train generator ***
-                for k in range(self.generator_num_steps):
+                for k in range(generator_num_steps):
                     z = torch.randn(batch_size, self.n_units_latent, device=device)  # noise vec
                     noise_input = torch.cat([z, cond], dim=1)
                     X_fake = generator.forward(noise_input)
 
                     cond_detached = cond.detach()
-                    y_hat = discriminator(torch.cat([X_fake, cond_detached], dim=1))
+                    y_hat = discriminator(torch.cat([X_fake], dim=1))
                     loss_g = -torch.mean(y_hat)
 
                     loss_cond = self.compute_condition_loss(X_fake.detach().cpu().numpy(), cond, X_real)   # Calculate condition loss and add to total loss
@@ -558,35 +385,17 @@ class CTGan(nn.Module):
             epoch_time = time.time() - start_time
             total_time += epoch_time
 
-            if epoch % self.n_iter_print == 0:   
+            if epoch % n_iter_print == 0:   
                 avg_time_per_epoch = total_time / epoch
-                remaining_time = avg_time_per_epoch * (self.n_epochs - epoch)
+                remaining_time = avg_time_per_epoch * (n_epochs - epoch)
 
                 print(f"Epoch {epoch:4d} || Loss Critic: {epoch_loss_critic_train:7.4f} || Loss Gen: {epoch_loss_gen_train:7.4f} || Loss Cond: {cond_loss_gen_train:7.4f}|| Avg Time/Epoch: {format_time(avg_time_per_epoch)} || Remaining Time: {format_time_with_h(remaining_time)}")
 
-            if self.n_iter_checkpoint and epoch % self.n_iter_checkpoint == 0:
+            if n_iter_checkpoint and epoch % n_iter_checkpoint == 0:
                 # TODO: Add code for saving model checkpoints
                 pass
 
         return loss_critic_list_train, loss_gen_list_train
-
-
-    def compute_condition_loss(self, gen_data:torch.tensor, real_cond:torch.tensor, test):
-        x_gen = self.data_encoder.inv_transform(gen_data)
-        x_gen_without_cond = self.data_encoder.transform_without_condition(x_gen)
-
-        pred = self.classifier.forward(x_gen_without_cond)
-        pred_tensor = torch.cat(pred, dim=1)
-
-        loss_condition = torch.nn.functional.binary_cross_entropy_with_logits(pred_tensor.float(), real_cond.float()) 
-
-        return loss_condition
-
-
-    def calculate_cond_loss_weight(self, epoch):
-        weight = (epoch / (self.n_epochs)) * self.lambda_condition_loss_weight
-
-        return weight
 
 
     def evaluate_discriminator(self, data_loader: DataLoader):
@@ -651,46 +460,7 @@ class CTGan(nn.Module):
         return avg_loss_gen
 
     
-    def gen(self, num_samples=None, cond_df=pd.DataFrame()):
-        """
-        Generate samples using the generator model. Either `num_samples` or `cond_df` should be provided.
 
-        Parameters:
-        - num_samples: The number of samples to generate if not using a condition.
-        - cond_df: A DataFrame containing the conditional columns for generation.
-
-        Returns:
-        - Generated data as a DataFrame.
-        """
-        
-        # Check if both num_samples and cond_df are missing
-        if num_samples is None and cond_df.empty:
-            raise ValueError("Please provide either num_samples or cond_df to generate data.")
-        
-        # If cond_df is empty, generate random conditions
-        if cond_df.empty:
-            cond_df = self.cond_encoder.generate_random_condition(num_samples)
-            random_cond = self.cond_encoder.transform(cond_df)
-            gen_data_raw = self.generator.generate(num_samples, random_cond)
-            gen_data = self.data_encoder.inv_transform(gen_data_raw)
-            return gen_data
-        
-        else:
-            if len(self.cond_cols) != len(cond_df.columns): # todo set vergleichen da wir das ja mit dicts machen 
-                raise ValueError(f"cond_df is missing a coloumn, following columns are required: {self.cond_cols}")
-
-            cond_tensor = self.cond_encoder.transform(cond_df)
-
-            if cond_tensor.shape[1] != self.n_units_conditional:
-                raise ValueError(f"Expected {self.n_units_conditional} conditional columns, but got {cond_tensor.shape[1]}")
-            
-            gen_data_raw = self.generator.generate(n_samples=cond_tensor.shape[0], condition=cond_tensor)
-            gen_data_np = gen_data_raw.detach().cpu().numpy() 
-            gen_data_df = pd.DataFrame(gen_data_np) 
-
-            gen_data = self.data_encoder.inv_transform(gen_data_df)
-            
-            return gen_data
 
     
 
