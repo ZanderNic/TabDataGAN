@@ -93,14 +93,23 @@ class Base_CTGan(nn.Module):
         self.classifier.fit(train_loader=train_loader, test_loader=test_loader, lr=self.classifier_lr, opt_betas=self.classifier_opt_betas, epochs = self.classifier_n_iter, patience=self.classifier_patience) 
 
 
-    def compute_condition_loss(self, gen_data:torch.tensor, real_cond:torch.tensor, test):
+    def compute_condition_classifier_loss(self, gen_data:torch.tensor, real_cond:torch.tensor):
         x_gen = self.data_encoder.inv_transform(gen_data)
         x_gen_without_cond = self.data_encoder.transform_without_condition(x_gen)
 
         pred = self.classifier.forward(x_gen_without_cond)
         pred_tensor = torch.cat(pred, dim=1)
 
-        loss_condition = torch.nn.functional.binary_cross_entropy_with_logits(pred_tensor.float(), real_cond.float()) 
+        loss_condition_class = torch.nn.functional.binary_cross_entropy_with_logits(pred_tensor.float(), real_cond.float())
+
+        return loss_condition_class
+
+    
+    def compute_condition_loss(self, gen_data:torch.tensor, real_cond:torch.tensor):
+        x_gen = self.data_encoder.inv_transform(gen_data)
+        cond_x_gen = self.cond_encoder.get_cond_from_data(x_gen)
+
+        loss_condition = torch.nn.functional.binary_cross_entropy_with_logits(cond_x_gen.float(), real_cond.float())
 
         return loss_condition
 
