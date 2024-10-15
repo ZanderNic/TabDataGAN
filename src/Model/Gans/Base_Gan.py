@@ -94,22 +94,26 @@ class Base_CTGan(nn.Module):
 
 
     def compute_condition_classifier_loss(self, gen_data:torch.tensor, real_cond:torch.tensor):
-        x_gen = self.data_encoder.inv_transform(gen_data)
-        x_gen_without_cond = self.data_encoder.transform_without_condition(x_gen)
+        x_gen_without_cond = self.data_encoder.get_only_data_from_tensor(gen_data) 
 
         pred_tensor = self.classifier.predict(x_gen_without_cond)
 
-        #loss_condition_class = torch.nn.functional.cross_entropy(pred_tensor.float(), real_cond.float()) # Idk what is better 
+        #loss_condition_class = torch.nn.functional.binary_cross_entropy(pred_tensor.float(), real_cond.float()) # Idk what is better 
         loss_condition_class = torch.mean(pred_tensor - real_cond)  # this was used by CTAB-GAN+
 
         return loss_condition_class
 
-    
-    def compute_condition_loss(self, gen_data:torch.tensor, real_cond:torch.tensor):
-        x_gen = self.data_encoder.inv_transform(gen_data)
-        cond_x_gen = self.cond_encoder.get_cond_from_data(x_gen)
 
-        loss_condition = torch.nn.functional.cross_entropy(cond_x_gen.float(), cond_real.float()) / gen_data.shape[0] # TODO is it right to div by n samples
+    def compute_condition_loss(self, gen_data:torch.tensor, real_cond:torch.tensor):
+        cond_x_gen = self.data_encoder.get_condition_from_tensor(gen_data) 
+
+        cond_x_gen = cond_x_gen.to(self.device)
+        cond_real = real_cond.to(self.device)
+
+        #loss_condition = torch.nn.functional.cross_entropy(cond_x_gen.float(), cond_real.float())
+        loss = torch.nn.CrossEntropyLoss()
+        loss_condition = loss(cond_x_gen, cond_real)
+
 
         return loss_condition
 
