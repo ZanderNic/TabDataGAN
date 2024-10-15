@@ -175,17 +175,14 @@ class DataEncoder(object):
         Extracts the condition from the input data tensor without detaching the gradients.
         """
         cond_tensors = [data_tensor[:, i:(i + self.units_in_order[i])] for i in self.index_cond]
-        return torch.cat(cond_tensors, dim=1)  # Combines all condition tensors into one tensor with grad
-
+        return torch.cat(cond_tensors, dim=1)  
 
     def get_only_data_from_tensor(self, data_tensor: torch.tensor):
         """
-        Extracts the condition from the input data tensor without detaching the gradients.
+        Extracts only the data (excluding the condition) from the input data tensor without detaching the gradients.
         """
-        data_tensor_no_cond = [data_tensor[:, i:(i + self.units_in_order[i])] for i in not self.index_cond]
-        return torch.cat(data_tensor_no_cond, dim=1)  # Combines all condition tensors into one tensor with grad
-
-
+        data_tensor_no_cond = [data_tensor[:, i:(i + self.units_in_order[i])] for i in range(len(self.units_in_order)) if i not in self.index_cond]
+        return torch.cat(data_tensor_no_cond, dim=1)  
 
 
     def encode_dim(self):
