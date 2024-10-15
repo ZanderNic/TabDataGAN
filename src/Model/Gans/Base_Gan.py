@@ -97,10 +97,10 @@ class Base_CTGan(nn.Module):
         x_gen = self.data_encoder.inv_transform(gen_data)
         x_gen_without_cond = self.data_encoder.transform_without_condition(x_gen)
 
-        pred = self.classifier.forward(x_gen_without_cond)
-        pred_tensor = torch.cat(pred, dim=1)
+        pred_tensor = self.classifier.predict(x_gen_without_cond)
 
-        loss_condition_class = torch.nn.functional.binary_cross_entropy_with_logits(pred_tensor.float(), real_cond.float())
+        #loss_condition_class = torch.nn.functional.binary_cross_entropy(pred_tensor.float(), real_cond.float()) # Idk what is better 
+        loss_condition_class = torch.mean(pred_tensor - real_cond)  # this was used by CTAB-GAN+
 
         return loss_condition_class
 
