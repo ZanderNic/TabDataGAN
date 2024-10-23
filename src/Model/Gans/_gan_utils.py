@@ -69,7 +69,7 @@ def gradient_penalty(discriminator, X_real_cond, X_fake_cond, device):
     return gradient_penalty
 
 def wasserstein_loss(y_real, y_fake):
-    return torch.mean(y_fake) - torch.mean(y_real)
+    return torch.mean(y_real) - torch.mean(y_fake)
 
 
 def find_w(input_size):
