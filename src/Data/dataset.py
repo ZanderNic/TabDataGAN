@@ -59,6 +59,9 @@ class CTGan_data_set(Dataset):
     def dataframe(self) -> pd.DataFrame:
         return self._data
     
+    def df(self) -> pd.DataFrame:
+        return self._data
+
     def cond_cols(self) -> List[str]:
         return self._cond_cols
 
