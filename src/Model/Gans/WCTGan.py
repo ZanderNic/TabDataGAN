@@ -43,30 +43,31 @@ class WCTGan(Base_CTGan):
     def __init__(
         self,
 
-        n_units_latent: int = 300, 
+        n_units_latent: int = 500, 
         
         # Generator
         generator_class: nn.Module = Generator,
-        generator_n_layers_hidden: int = 3,
+        generator_n_layers_hidden: int = 10,
+        generator_n_units_hidden: int = 500,
         generator_nonlin: str = "relu",
         generator_nonlin_out: str = "sigmoid", # This function given here should return a number between ]0; 1] because the data is processed and scaled between ]0; 1]
         generator_batch_norm: bool = False,
         generator_dropout: float = 0,
         generator_lr: float = 0.0001,
         generator_weight_decay: float = 0.0001,
-        generator_residual: bool = True,
-        generator_opt_betas: tuple = (0.5, 0.99),
+        generator_opt_betas: tuple = (0.5, 0.999),
         generator_extra_penalties: list = [],  #TODO 
         
         # discriminator
         discriminator_class: nn.Module = Discriminator,
-        discriminator_n_layers_hidden: int = 3,
+        discriminator_n_layers_hidden: int = 5,
+        discriminator_n_units_hidden: int = 500,
         discriminator_nonlin: str = "leaky_relu",
         discriminator_batch_norm: bool = False,
-        discriminator_dropout: float = 0,
+        discriminator_dropout: float = 0.1,
         discriminator_lr: float =  0.0001,
         discriminator_weight_decay: float = 0.0001,
-        discriminator_opt_betas: tuple = (0.5, 0.99),
+        discriminator_opt_betas: tuple = (0.5, 0.999),
         discriminator_extra_penalties: list = [], #TODO
 
         # Classifier
@@ -82,42 +83,45 @@ class WCTGan(Base_CTGan):
         classifier_patience : int = 25,
         classifier_batch_size : int = 128,
 
+        # Lambda extra Generator losses
+        lambda_cond_loss_weight: float = 1,
+        lambda_cond_classifier_loss_weight: float = 0,
+        lambda_mean_loss_weight: float = 0, # values like 1 or 0 make sence (turn it of or on dont weight it)
+        lambda_correlation_loss_weight: float = 0, # values like 1 or 0 make sence (turn it of or on dont weight it)
+        lambda_cov_weight : float = 0, 
+
         # training
         batch_size: int = 128,
         random_state: int = None,
         device: Any = DEVICE,
-        lambda_condition_loss_weight = 1,
-
-        max_categorical_encoder= 30, # If a categorical column has more than 30 classes no One Hot encoding is used a general transform for those coloumns will be used (scale them betwean [0 and 1]) 
+       
+        # data transfomration
+        cont_transform_methode : str = "min_max", # how to transfomr continuous numeric coloumns eathter "min_max" or "mode" 
+        max_continuous_modes: int = 30, # if cont_transform_methode is "mode" this parameter gives the number of modes that are estimatet 
     
         **kwargs
     ):
-        
         super().__init__()
-
-        self.device = device
 
         self.n_units_latent = n_units_latent
 
-
+        # generator
         self.generator_class = generator_class
-        self.generator_extra_penalties = generator_extra_penalties # todo
-        
-
         self.generator_n_layers_hidden= generator_n_layers_hidden
+        self.generator_n_units_hidden= generator_n_units_hidden
         self.generator_nonlin= generator_nonlin
         self.generator_nonlin_out= generator_nonlin_out
         self.generator_batch_norm= generator_batch_norm
         self.generator_dropout= generator_dropout
         self.generator_lr = generator_lr
         self.generator_weight_decay = generator_weight_decay
-        self.generator_residual= generator_residual
         self.generator_opt_betas = generator_opt_betas
 
 
+        # discriminator
         self.discriminator_class= discriminator_class
-        
         self.discriminator_n_layers_hidden= discriminator_n_layers_hidden
+        self.discriminator_n_units_hidden= discriminator_n_units_hidden
         self.discriminator_nonlin= discriminator_nonlin
         self.discriminator_batch_norm= discriminator_batch_norm
         self.discriminator_dropout= discriminator_dropout
@@ -126,6 +130,8 @@ class WCTGan(Base_CTGan):
         self.discriminator_opt_betas = discriminator_opt_betas
         self.discriminator_extra_penalties = discriminator_extra_penalties
 
+
+        # classifier
         self.classifier_n_layers_hidden = classifier_n_layers_hidden
         self.classifier_n_units_hidden = classifier_n_units_hidden
         self.classifier_nonlin = classifier_nonlin
@@ -138,30 +144,27 @@ class WCTGan(Base_CTGan):
         self.classifier_patience = classifier_patience
         self.classifier_batch_size = classifier_batch_size
 
-        self.lambda_condition_loss_weight = lambda_condition_loss_weight  # weighting of the conditional loss that is determit by the classifier
 
-        self.batch_size = batch_size
-                
+        # extra losses weights for generator 
+        self.lambda_cond_classifier_loss_weight = lambda_cond_classifier_loss_weight
+        self.lambda_cond_loss_weight = lambda_cond_loss_weight  # weighting of the conditional loss that is determit by the classifier
+        self.lambda_mean_loss_weight = lambda_mean_loss_weight # weighting of mean loss weight 
+        self.lambda_correlation_loss_weight = lambda_correlation_loss_weight
+        self.lambda_cov_weight = lambda_cov_weight
+
+        # data transfomration
+        self.cont_transform_methode = cont_transform_methode 
+        self.max_continuous_modes = max_continuous_modes
+
+
+        # Some things 
+        self.batch_size = batch_size    
         self.random_state = random_state
-        self.max_categorical_encoder = max_categorical_encoder
-
-        self.kwargs = kwargs
-
-        self.generator = None
-        self.discriminator = None
-
-
-    def valid_generator_extra_penalties(generator_extra_penalties):
-        """
-            takes the list generator_extra_penalties and returns all the implemented ones
-        """
-        valid_extra_pen = ["cond_classifier", "cond_match"]
+        self.device = device
         
-        generator_extra_penalties = []
-
-        for extra_peneltie in generator_extra_penalties:
-            if extra_peneltie in valid_extra_pen:
-                pass
+        self.kwargs = kwargs
+        
+        self.discriminator, self.generator,  self.data_encoder = None, None, None # set this to None so they can be init in fit 
 
     
 
@@ -200,28 +203,22 @@ class WCTGan(Base_CTGan):
 
 
     def preprocess_and_load_train_test_classifier(self, ctgan_data_set, batch_size, train_size = 0.8): #-> Tuple(torch.dataloader()): #TODO
-        data = ctgan_data_set.dataframe()
-        conditiond_encoded = self.data_encoder.transform_cond(data)
-        data_encoded = self.data_encoder.transform_data_df_without_condition(data) 
+        if self.lambda_cond_classifier_loss_weight != 0:
+            data = ctgan_data_set.dataframe()
+            conditiond_encoded = self.data_encoder.transform_cond(data)
+            data_encoded = self.data_encoder.transform_data_df_without_condition(data) 
 
-        dataset = torch.utils.data.TensorDataset(
-            data_encoded, 
-            conditiond_encoded
-        )
-        train_size = int(train_size * len(dataset))  
-        test_size = len(dataset) - train_size  
+            dataset = torch.utils.data.TensorDataset(
+                data_encoded, 
+                conditiond_encoded
+            )
+            train_size = int(train_size * len(dataset))  
+            test_size = len(dataset) - train_size  
 
-        train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        test_loader =  DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
-        return train_loader, test_loader
-
-
-    def train_classifier(self, dataset : CTGan_data_set, train_size:float = 0.8): 
-
-        train_loader, test_loader = self.preprocess_and_load_train_test_classifier(ctgan_data_set=dataset, batch_size=self.classifier_batch_size, train_size=train_size)
-        self.classifier.fit(train_loader=train_loader, test_loader=test_loader, lr=self.classifier_lr, opt_betas=self.classifier_opt_betas, epochs = self.classifier_n_iter, patience=self.classifier_patience) 
-
+            train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+            train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+            test_loader =  DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
+            return train_loader, test_loader
         
     def fit(self, 
             ctgan_data_set: CTGan_data_set,
@@ -242,24 +239,33 @@ class WCTGan(Base_CTGan):
 
         if not (self.generator and self.discriminator and self.classifier):
 
-            self.cond_cols = ctgan_data_set.cond_cols()
-            
+            self.cond_cols = ctgan_data_set.cond_cols()     # conditional columns 
+            self.cat_cols = ctgan_data_set.cat_cols()       # categorical columns
+            self.num_cols = ctgan_data_set.num_cols()       # numeric columns 
+            self.ord_cols = ctgan_data_set.ord_cols()       # ordinal columns 
+
+            # init data encoder 
             self.data_encoder = DataEncoder(
                 ctgan_data_set.dataframe(),
                 cond_cols=self.cond_cols,
-                categorical_columns=ctgan_data_set.cat_cols(),
-                numeric_columns=ctgan_data_set.num_cols(),
-                ordinal_columns=ctgan_data_set.ord_cols(),
+                categorical_columns=self.cat_cols,
+                numeric_columns=self.num_cols,
+                ordinal_columns=self.ord_cols,
+                cont_transform_methode = self.cont_transform_methode,
+                max_continuous_modes = self.max_continuous_modes
             )
 
+            # Get output space of generator and units conditional for both generator and discriminator
             self.output_space =  self.data_encoder.encode_dim() 
             self.n_units_conditional =  self.data_encoder.encode_cond_dim() 
 
+            # init generator
             self.generator = self.generator_class(
                 generator_n_units_in= self.n_units_latent,
                 generator_n_units_conditional= self.n_units_conditional,
                 generator_n_units_out= self.output_space, 
-                generator_n_layers_hidden= self.generator_n_layers_hidden,  
+                generator_n_layers_hidden= self.generator_n_layers_hidden,
+                generator_n_units_hidden  = self.generator_n_units_hidden,
                 generator_nonlin= self.generator_nonlin, 
                 generator_nonlin_out= self.generator_nonlin_out, 
                 generator_batch_norm= self.generator_batch_norm, 
@@ -268,8 +274,11 @@ class WCTGan(Base_CTGan):
                 **self.kwargs
             )
 
+            # init discriminator
             self.discriminator = self.discriminator_class(
                 discriminator_n_units_in= self.output_space,
+                discriminator_units_conditional= self.n_units_conditional,
+                discriminator_n_units_hidden= self.discriminator_n_units_hidden,
                 discriminator_n_layers_hidden= self.discriminator_n_layers_hidden, 
                 discriminator_nonlin= self.discriminator_nonlin, 
                 discriminator_batch_norm= self.discriminator_batch_norm, 
@@ -277,31 +286,17 @@ class WCTGan(Base_CTGan):
                 device= self.device, 
                 **self.kwargs
             )
-           
-            self.classifier = Classifier(
-                classifier_n_units_in = self.output_space - self.n_units_conditional,
-                classifier_n_units_out_per_category = self.data_encoder.get_units_per_cond_column(),
-                classifier_n_layers_hidden =  self.classifier_n_layers_hidden, 
-                classifier_n_units_hidden = self.classifier_n_units_hidden, 
-                classifier_nonlin= self.classifier_nonlin, 
-                classifier_batch_norm= self.classifier_batch_norm, 
-                classifier_dropout= self.classifier_dropout,
-                device= self.device,
-                loss= self.classifier_loss,
-            )
 
-            self.cond_cols = ctgan_data_set.cond_cols()     # conditional columns 
-            self.cat_cols = ctgan_data_set.cat_cols()       # categorical columns
-            self.num_cols = ctgan_data_set.num_cols()       # numeric columns 
-            self.ord_col = ctgan_data_set.ord_cols()        # ordinal columns 
+            # init generator extra penalties when the weights are set to != 0 and if something needs to be init
+            self.init_generator_extra_penalties(ctgan_data_set)
+
+           
         
         # for better readability
         generator = self.generator
         discriminator = self.discriminator
         device = self.device
 
-        self.train_classifier(ctgan_data_set)
-        
         train_loader = self.preprocess_and_load_data(ctgan_data_set, self.batch_size)
 
         optim_generator = torch.optim.Adam(generator.net.parameters(), lr=self.generator_lr, betas=self.generator_opt_betas)
@@ -312,16 +307,14 @@ class WCTGan(Base_CTGan):
 
         loss_critic_list_train, loss_gen_list_train = list(), list()
 
-        total_time = 0  # total time
+        total_time = 0
 
         print("Starting Training of the Gan")
 
         for epoch in range(1, n_epochs + 1):
             start_time = time.time() 
 
-            epoch_loss_critic_train = 0.0
-            epoch_loss_gen_train = 0.0
-            cond_loss_gen_train = 0.0
+            epoch_loss_critic_train, epoch_loss_gen_train, epoch_extra_gen_loss = 0, 0, 0   # set loss to 0 at the start of every epoch 
 
             for X, cond in train_loader:
                 X_real = X.to(device)
@@ -334,11 +327,11 @@ class WCTGan(Base_CTGan):
                     noise_input = torch.cat([z, cond], dim=1)
                     X_fake = generator.forward(noise_input)
 
-                    y_hat_real = discriminator(torch.cat([X_real], dim=1))
-                    y_hat_fake = discriminator(torch.cat([X_fake], dim=1)) # TODO vlt sollte der disc nochmal auch die cond bekommen auch wenn sie schon dabei ist 
+                    y_hat_real = discriminator(torch.cat([X_real, cond], dim=1))
+                    y_hat_fake = discriminator(torch.cat([X_fake, cond], dim=1))  
                     loss_critic = - wasserstein_loss(y_hat_real, y_hat_fake)
 
-                    gp = gradient_penalty(discriminator, torch.cat([X_real], dim=1), torch.cat([X_fake], dim=1), device) # Add gradient penalty 
+                    gp = gradient_penalty(discriminator, torch.cat([X_real, cond], dim=1), torch.cat([X_fake, cond], dim=1), device)  
                     loss_critic += lambda_gradient_penalty * gp
                     optim_discriminator.zero_grad()
                     loss_critic.backward()
@@ -353,26 +346,23 @@ class WCTGan(Base_CTGan):
                     X_fake = generator.forward(noise_input)
 
                     cond_detached = cond.detach()
-                    y_hat = discriminator(torch.cat([X_fake], dim=1))
+                    y_hat = discriminator(torch.cat([X_fake, cond_detached], dim=1))
                     loss_g = -torch.mean(y_hat)
 
-                    loss_cond_class = self.compute_condition_classifier_loss(X_fake, cond)  
-                    loss_cond_match = self.compute_condition_loss(X_fake, cond) #TODO edit the way the cond is filtered from X_fake to mak it possible to backprob it 
+                    extra_gen_loss = self.compute_extra_loss_generator(X_gen=X_fake, X_real=X_real, cond=cond)
 
-                    loss_cond = loss_cond_match #(1 - self.lambda_condition_loss_weight) * loss_cond_match  + self.lambda_condition_loss_weight * loss_cond_class
-                    
-                    total_loss = loss_g + loss_cond # think if it makes sence to scale the loss depending on the epoch 
+                    total_loss = loss_g + extra_gen_loss
 
                     optim_generator.zero_grad()
                     total_loss.backward()
                     optim_generator.step()
 
-                cond_loss_gen_train += loss_cond.item() 
+                epoch_extra_gen_loss += extra_gen_loss.item() 
                 epoch_loss_gen_train += total_loss.item()
 
             epoch_loss_critic_train /= len(train_loader)
             epoch_loss_gen_train /= len(train_loader)
-            cond_loss_gen_train /= len(train_loader)
+            epoch_extra_gen_loss /= len(train_loader)
 
             loss_critic_list_train.append(epoch_loss_critic_train)
             loss_gen_list_train.append(epoch_loss_gen_train)
@@ -383,7 +373,7 @@ class WCTGan(Base_CTGan):
             if epoch % n_iter_print == 0:   
                 avg_time_per_epoch = total_time / epoch
                 remaining_time = avg_time_per_epoch * (n_epochs - epoch)
-                print(f"Epoch {epoch:4d} || Loss Critic: {epoch_loss_critic_train:7.4f} || Loss Gen: {epoch_loss_gen_train:7.4f} || Loss Cond: {cond_loss_gen_train:7.4f}|| Avg Time/Epoch: {format_time(avg_time_per_epoch)} || Remaining Time: {format_time_with_h(remaining_time)}")
+                print(f"Epoch {epoch:4d} || Loss Critic: {epoch_loss_critic_train:7.4f} || Loss Gen: {epoch_loss_gen_train:7.4f} || Loss Gen Extra: {epoch_extra_gen_loss:7.4f}|| Avg Time/Epoch: {format_time(avg_time_per_epoch)} || Remaining Time: {format_time_with_h(remaining_time)}")
 
             if n_iter_checkpoint and epoch % n_iter_checkpoint == 0:
                 # TODO: Add code for saving model checkpoints
@@ -445,7 +435,7 @@ class WCTGan(Base_CTGan):
                 loss_g = -torch.mean(y_hat)
 
                 loss_cond = self.compute_condition_loss(X_fake.detach().cpu().numpy(), cond)    # Condition loss
-                total_loss = loss_g + self.lambda_condition_loss_weight * loss_cond
+                total_loss = loss_g + self.lambda_condition_loss_weight * loss_cond #TODO that is not right here 
 
                 total_loss_gen += total_loss.item()
 
