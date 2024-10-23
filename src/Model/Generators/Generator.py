@@ -126,8 +126,64 @@ class Generator(nn.Module):
 
 
     def forward(self, x): 
-        self.net.to(self.device)
         return self.net(x)  
+
+    def generate(self, n_samples, condition): 
+        self.eval()  
+        with torch.no_grad():
+            noise = torch.randn(n_samples, self.n_units_lat, device=self.device).to(self.device) 
+            condition = condition.to(self.device)
+            generator_input = torch.cat([noise, condition], dim=1) 
+            gen_data = self.forward(generator_input) 
+        return gen_data
+
+
+class Generator(nn.Module):
+    
+    def __init__(
+        self, 
+        generator_n_units_in,
+        generator_n_units_conditional,
+        generator_n_units_out, 
+        generator_n_layers_hidden: int = 3, 
+        generator_n_units_hidden: int = 200, 
+        generator_nonlin: str = "leaky_relu", 
+        generator_nonlin_out: str = "leaky_relu", 
+        generator_batch_norm: bool = False, 
+        generator_dropout: float = 0.001, 
+        device: Any = DEVICE, 
+    ):
+        super().__init__()
+        
+        self.n_units_lat = generator_n_units_in
+
+        self.device = device
+        self.net = nn.Sequential()
+
+        generator_nonlin = get_nolin_act(generator_nonlin)
+        generator_nonlin_out = get_nolin_act(generator_nonlin_out)
+        
+        self.net.append(nn.Linear(generator_n_units_in + generator_n_units_conditional, generator_n_units_hidden))
+        if generator_batch_norm:
+            self.net.append(nn.BatchNorm1d(generator_n_units_hidden))
+
+        self.net.append(generator_nonlin)
+        self.net.append(nn.Dropout(generator_dropout))
+
+        for _ in range(generator_n_layers_hidden - 1):
+                self.net.append(nn.Linear(generator_n_units_hidden, generator_n_units_hidden))
+                if generator_batch_norm:
+                    self.net.append(nn.BatchNorm1d(generator_n_units_hidden))
+                self.net.append(nn.LeakyReLU())
+                self.net.append(nn.Dropout(generator_dropout))
+
+        self.net.append(nn.Linear(generator_n_units_hidden, generator_n_units_out))
+        self.net.append(generator_nonlin_out)
+
+
+    def forward(self, x): 
+        self.net.to(self.device)
+        return self.net(x)
 
     def generate(self, n_samples, condition): 
         self.eval()  
