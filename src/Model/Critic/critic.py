@@ -19,6 +19,7 @@ class Discriminator(nn.Module):
     def __init__(
         self, 
         discriminator_n_units_in: int,
+        discriminator_units_conditional: int,
         discriminator_n_layers_hidden: int = 3, 
         discriminator_n_units_hidden: int = 100, 
         discriminator_nonlin: str = "leaky_relu", 
@@ -33,7 +34,7 @@ class Discriminator(nn.Module):
 
         discriminator_nonlin = get_nolin_act(discriminator_nonlin)
 
-        self.net.append(nn.Linear(discriminator_n_units_in, discriminator_n_units_hidden))
+        self.net.append(nn.Linear(discriminator_n_units_in + discriminator_units_conditional, discriminator_n_units_hidden))
         if discriminator_batch_norm:
             self.net.append(nn.BatchNorm1d(discriminator_n_units_hidden))
 
@@ -52,6 +53,7 @@ class Discriminator(nn.Module):
         self.net.apply(init_weights) 
 
     def forward(self, x):
+        self.net.to(self.device)
         x = x.to(self.device)
         return self.net(x).view(-1)
 
@@ -63,6 +65,7 @@ class Conv_Discriminator(nn.Module):
     def __init__(
         self, 
         discriminator_n_units_in: int,
+        discriminator_units_conditional: int,
         discriminator_n_layers_hidden: int = 3, 
         discriminator_n_kernels_hidden: int = 64, 
         discriminator_nonlin: str = "leaky_relu", 
@@ -76,7 +79,7 @@ class Conv_Discriminator(nn.Module):
         discriminator_nonlin = get_nolin_act(discriminator_nonlin)
         
         # Find the appropriate size for 2D tensors
-        self.w, self.extra = find_w(discriminator_n_units_in)
+        self.w, self.extra = find_w(discriminator_n_units_in + discriminator_units_conditional)
 
         layers = []
         in_channels = 1  
@@ -107,5 +110,6 @@ class Conv_Discriminator(nn.Module):
             x = torch.cat([x, padding], dim=1)
         
         x = x.view(x.shape[0], 1, self.w, self.w)
+        self.net.to(self.device)
 
         return self.net(x).view(-1)  
