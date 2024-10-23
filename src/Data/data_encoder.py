@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
+from sklearn.mixture import BayesianGaussianMixture
 
 class DataEncoder(object):
     """
@@ -16,12 +17,18 @@ class DataEncoder(object):
             numeric_columns: list, 
             cond_cols: list,
             random_state: int = None,
+            cont_transform_methode: str = "min_max", # "min_max" or "modes"
+            max_continuous_modes: int = 30
     ):
+        self.cont_transform_methode = cont_transform_methode
+        self.max_continuous_modes = max_continuous_modes
+
         self.categorical_columns = categorical_columns
         self.ordinal_columns = ordinal_columns
         self.numeric_columns = numeric_columns
 
         self.categorical_cond_columns = [col for col in self.categorical_columns if col in cond_cols]
+        
 
         self.columns_in_order = [col for col in raw_df.columns if col in categorical_columns + ordinal_columns + numeric_columns]
         self.cond_cols_in_order = [col for col in raw_df.columns if col in categorical_columns + ordinal_columns + numeric_columns and col in cond_cols]
@@ -54,13 +61,33 @@ class DataEncoder(object):
                 self.units_in_order.append(n_categories)  
             
             elif column in self.ordinal_columns + self.numeric_columns:
-                scaler = MinMaxScaler(feature_range=(0, 1))
-                scaler.fit(df[[column]])
-                self.encoders_in_order.append(scaler)
-                self.units_in_order.append(1)  
+                if self.cont_transform_methode == "min_max":
+                    scaler = MinMaxScaler(feature_range=(0, 1))
+                    scaler.fit(df[[column]])
+                    self.encoders_in_order.append(scaler)
+                    self.units_in_order.append(1)
+
+                elif self.cont_transform_methode == "GMM": # Gaussian Mixture Model
+                    pass #TODO 
+                    # gm = BayesianGaussianMixture(
+                    #   n_components = self.n_clusters, 
+                    #   weight_concentration_prior_type='dirichlet_process',
+                    #   weight_concentration_prior=0.001, 
+                    #   max_iter=100,n_init=1, random_state=42)
+                    
+                    # # gm.fit(data[:, id_].reshape([-1, 1]))
+                    # # mode_freq = (pd.Series(gm.predict(data[:, id_].reshape([-1, 1]))).value_counts().keys())
+                    
+                    # self.encoders_in_order.append(gm)
+                    # self.units_in_order.append() # todo 
+                else:
+                    raise ValueError(f"The cont_transform_methode {self.cont_transform_methode} dosen't exist please use min_max or GMM")
         
         self.encoder_n_dim = sum(self.units_in_order)
         self.encode_n_cond_dim = sum([self.units_in_order[i] for i in self.index_cond])
+        
+        self.units_accumulate =  [0] + np.cumsum(self.units_in_order).tolist()
+
 
     def transform_data(self, df: pd.DataFrame):
         if list(df.columns) != list(self.columns_in_order):
@@ -174,14 +201,16 @@ class DataEncoder(object):
         """
         Extracts the condition from the input data tensor without detaching the gradients.
         """
-        cond_tensors = [data_tensor[:, i:(i + self.units_in_order[i])] for i in self.index_cond]
+        cond_tensors = [data_tensor[:, self.units_accumulate[i] : self.units_accumulate[i+1]] for i in self.index_cond] 
         return torch.cat(cond_tensors, dim=1)  
+
 
     def get_only_data_from_tensor(self, data_tensor: torch.tensor):
         """
         Extracts only the data (excluding the condition) from the input data tensor without detaching the gradients.
         """
-        data_tensor_no_cond = [data_tensor[:, i:(i + self.units_in_order[i])] for i in range(len(self.units_in_order)) if i not in self.index_cond]
+        index_not_cond = [i for i in range(len(self.cols())) if i not in self.index_cond]
+        data_tensor_no_cond = [data_tensor[:, self.units_accumulate[i] : self.units_accumulate[i+1]] for i in index_not_cond]
         return torch.cat(data_tensor_no_cond, dim=1)  
 
 
@@ -210,3 +239,6 @@ class DataEncoder(object):
 
     def cond_cols(self):
         return self.cond_cols_in_order
+
+    def units_accumulate(self):
+        return self.units_accumulate
