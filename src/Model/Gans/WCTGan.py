@@ -47,8 +47,8 @@ class WCTGan(Base_CTGan):
         
         # Generator
         generator_class: nn.Module = Generator,
-        generator_n_layers_hidden: int = 10,
-        generator_n_units_hidden: int = 500,
+        generator_n_layers_hidden: int = 2,
+        generator_n_units_hidden: int = 300,
         generator_nonlin: str = "relu",
         generator_nonlin_out: str = "sigmoid", # This function given here should return a number between ]0; 1] because the data is processed and scaled between ]0; 1]
         generator_batch_norm: bool = False,
@@ -56,19 +56,18 @@ class WCTGan(Base_CTGan):
         generator_lr: float = 0.0001,
         generator_weight_decay: float = 0.0001,
         generator_opt_betas: tuple = (0.5, 0.999),
-        generator_extra_penalties: list = [],  #TODO 
-        
+   
+
         # discriminator
         discriminator_class: nn.Module = Discriminator,
-        discriminator_n_layers_hidden: int = 5,
-        discriminator_n_units_hidden: int = 500,
+        discriminator_n_layers_hidden: int = 2,
+        discriminator_n_units_hidden: int = 300,
         discriminator_nonlin: str = "leaky_relu",
         discriminator_batch_norm: bool = False,
         discriminator_dropout: float = 0.1,
         discriminator_lr: float =  0.0001,
         discriminator_weight_decay: float = 0.0001,
         discriminator_opt_betas: tuple = (0.5, 0.999),
-        discriminator_extra_penalties: list = [], #TODO
 
         # Classifier
         classifier_n_layers_hidden: int = 3, 
@@ -128,7 +127,6 @@ class WCTGan(Base_CTGan):
         self.discriminator_lr = discriminator_lr
         self.discriminator_weight_decay = discriminator_weight_decay
         self.discriminator_opt_betas = discriminator_opt_betas
-        self.discriminator_extra_penalties = discriminator_extra_penalties
 
 
         # classifier
@@ -251,7 +249,7 @@ class WCTGan(Base_CTGan):
                 categorical_columns=self.cat_cols,
                 numeric_columns=self.num_cols,
                 ordinal_columns=self.ord_cols,
-                cont_transform_methode = self.cont_transform_methode,
+                cont_transform_method = self.cont_transform_methode,
                 max_continuous_modes = self.max_continuous_modes
             )
 
@@ -347,7 +345,7 @@ class WCTGan(Base_CTGan):
 
                     cond_detached = cond.detach()
                     y_hat = discriminator(torch.cat([X_fake, cond_detached], dim=1))
-                    loss_g = -torch.mean(y_hat)
+                    loss_g = torch.mean(y_hat)
 
                     extra_gen_loss = self.compute_extra_loss_generator(X_gen=X_fake, X_real=X_real, cond=cond)
 

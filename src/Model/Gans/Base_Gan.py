@@ -23,7 +23,6 @@ class Base_CTGan(nn.Module):
         super().__init__()
 
 
-
     def preprocess_and_load_data(self, ctgan_data_set, batch_size)-> DataLoader:
         data = ctgan_data_set.dataframe()
         conditiond_encoded = self.cond_encoder.get_cond_from_data(data)
@@ -150,27 +149,42 @@ class Base_CTGan(nn.Module):
         cond_x_gen = cond_x_gen.to(self.device)
         cond_real = real_cond.to(self.device)
 
-        # units_per_col = self.data_encoder.get_units_per_cond_column() #TODO fix error   
-        # cum_units_per_col = [0] + np.cumsum(units_per_col).tolist()
+        units_per_col = self.data_encoder.get_units_per_cond_column()    
+        cum_units_per_col = [0] + np.cumsum(units_per_col).tolist()
 
-        # loss_condition = torch.tensor(0.0, device=self.device, requires_grad=True)
+        loss_condition = torch.tensor(0.0, device=self.device)
 
-        # for i in range(len(units_per_col)):
-        #     cond_real_tensor = cond_real[:, cum_units_per_col[i]:cum_units_per_col[i+1]]
-        #     cond_gen_tensor = cond_x_gen[:, cum_units_per_col[i]:cum_units_per_col[i+1]]
-        #     print( torch.argmax(cond_real_tensor, dim = 1), cond_gen_tensor , cond_real_tensor, torch.nn.functional.cross_entropy(cond_gen_tensor, torch.argmax(cond_real_tensor, dim = 1)))
-        #     loss_condition = loss_condition + torch.nn.functional.cross_entropy(cond_gen_tensor, torch.argmax(cond_real_tensor, dim = 1)) 
-        loss_condition = torch.mean((cond_real - cond_x_gen)**2)
-
+        for i in range(len(units_per_col)):
+            cond_real_tensor = cond_real[:, cum_units_per_col[i]:cum_units_per_col[i+1]]
+            cond_gen_tensor = cond_x_gen[:, cum_units_per_col[i]:cum_units_per_col[i+1]]
+                
+            if units_per_col[i]>= 0:
+                loss_condition = loss_condition + torch.nn.functional.cross_entropy(cond_gen_tensor, torch.argmax(cond_real_tensor, dim = 1)) 
+            else:
+                loss_condition = loss_condition + torch.mean((cond_real_tensor - cond_gen_tensor)**2) # use mse if it is a num col
 
         return loss_condition
 
 
     def compute_condition_classifier_loss(self, gen_data:torch.tensor, real_cond:torch.tensor):
-        x_gen_without_cond = self.data_encoder.get_only_data_from_tensor(gen_data) 
-        pred_tensor = self.classifier.predict(x_gen_without_cond)
+        x_gen_data = self.data_encoder.get_only_data_from_tensor(gen_data) 
 
-        loss_condition_class = torch.mean((pred_tensor - real_cond)**2)  # this was used by CTAB-GAN+
+        cond_real = real_cond.to(self.device)
+        pred_cond_x_gen = self.classifier.predict(x_gen_data)
+
+        units_per_col = self.data_encoder.get_units_per_cond_column()    
+        cum_units_per_col = [0] + np.cumsum(units_per_col).tolist()
+
+        loss_condition_class = torch.tensor(0.0, device=self.device)
+
+        for i in range(len(units_per_col)):
+            cond_real_tensor = cond_real[:, cum_units_per_col[i]:cum_units_per_col[i+1]]
+            cond_gen_tensor = pred_cond_x_gen[:, cum_units_per_col[i]:cum_units_per_col[i+1]]
+                
+            if units_per_col[i]>= 0:
+                loss_condition_class = loss_condition_class + torch.nn.functional.cross_entropy(cond_gen_tensor, torch.argmax(cond_real_tensor, dim = 1)) 
+            else:
+                loss_condition_class = loss_condition_class + torch.mean((cond_real_tensor - cond_gen_tensor)**2) # use mse if it is a num col
 
         return loss_condition_class
 

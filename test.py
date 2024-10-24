@@ -37,16 +37,28 @@ from src.Model.Critic.critic import Conv_Discriminator
 iris = load_iris(as_frame=True)
 df = iris['frame']
 
-print(df)
-
 data_set = CTGan_data_set(
     data=df,
     cond_cols=["target"],
     cat_cols=["target"]  
 )
 
-wctgan = WCTGan(lambda_condition_loss_weight=0, n_units_latent=100)#generator_class=Conv_Generator, discriminator_class=Conv_Discriminator)
-crit_loss, gen_loss = wctgan.fit(data_set, n_epochs=1000, discriminator_num_steps=35)
+
+wctgan = WCTGan(
+    n_units_latent=500
+                
+                
+)#generator_class=Conv_Generator, discriminator_class=Conv_Discriminator)
+
+
+crit_loss, gen_loss = wctgan.fit(
+    data_set, 
+    n_epochs=500, 
+    discriminator_num_steps=5,
+    generator_num_steps=1,
+    lambda_gradient_penalty=10,
+)
+
 plot_gan_losses(crit_loss, gen_loss)
 
 ## Generate new data
