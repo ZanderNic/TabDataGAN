@@ -23,16 +23,9 @@ $ git clone https://github.com/ZanderNic/SATGan.git
 ```
 TODO EDIT
 
-### Generic data
-* List the available general-purpose generators
+### Generate data
 
-```python
-from synthcity.plugins import Plugins
-
-Plugins(categories=["generic", "privacy"]).list()
-```
-
-* Load and train a tabular generator
+* Load and train a CTGAN
 
 ```python
 from src.Model.Gans.WCTGan import WCTGan
@@ -54,10 +47,15 @@ crit_loss, gen_loss = wctgan.fit(
     data_set, 
     n_epochs=10, 
 )
+```
+
+* Generate new synthetic tabular data
+
+```python
 
 cond_df = pd.DataFrame([{"target" : 1}]*160)
 syn_df = wctgan.gen(cond_df=cond_df)
 ```
 
-* Generate new synthetic tabular data
+
 
