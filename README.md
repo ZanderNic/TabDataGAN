@@ -4,11 +4,11 @@
 
 ---
 
-<div align="center">
-    [![Tabular Data](https://img.shields.io/badge/Tabular%20Data-%E2%9C%85-green)](#)
-    [![Generative AI](https://img.shields.io/badge/Generative%20AI-%E2%9A%A1-yellow)](#)
-    [![License: MIT](https://img.shields.io/badge/License-MIT-blue)](https://opensource.org/licenses/MIT)
-</div>
+<p align="center">
+    <a href="#"><img src="https://img.shields.io/badge/Tabular%20Data-%E2%9C%85-green"></a>
+    <a href="#"><img src="https://img.shields.io/badge/Generative%20AI-%E2%9A%A1-yellow"></a>
+    <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue"></a>
+</p>
 
 
 ## Infos:
