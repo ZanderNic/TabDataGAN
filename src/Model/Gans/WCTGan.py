@@ -48,7 +48,7 @@ class WCTGan(Base_CTGan):
         # Generator
         generator_class: nn.Module = Generator,
         generator_n_layers_hidden: int = 2,
-        generator_n_units_hidden: int = 300,
+        generator_n_units_hidden: int = 500,
         generator_nonlin: str = "relu",
         generator_nonlin_out: str = "sigmoid", # This function given here should return a number between ]0; 1] because the data is processed and scaled between ]0; 1]
         generator_batch_norm: bool = False,
@@ -61,7 +61,7 @@ class WCTGan(Base_CTGan):
         # discriminator
         discriminator_class: nn.Module = Discriminator,
         discriminator_n_layers_hidden: int = 2,
-        discriminator_n_units_hidden: int = 300,
+        discriminator_n_units_hidden: int = 500,
         discriminator_nonlin: str = "leaky_relu",
         discriminator_batch_norm: bool = False,
         discriminator_dropout: float = 0.1,
@@ -86,7 +86,7 @@ class WCTGan(Base_CTGan):
         lambda_cond_loss_weight: float = 1,
         lambda_cond_classifier_loss_weight: float = 0,
         lambda_mean_loss_weight: float = 0, # values like 1 or 0 make sence (turn it of or on dont weight it)
-        lambda_correlation_loss_weight: float = 0, # values like 1 or 0 make sence (turn it of or on dont weight it)
+        lambda_correlation_loss_weight: float = 1, # values like 1 or 0 make sence (turn it of or on dont weight it)
         lambda_cov_weight : float = 0, 
 
         # training
@@ -289,7 +289,6 @@ class WCTGan(Base_CTGan):
             self.init_generator_extra_penalties(ctgan_data_set)
 
            
-        
         # for better readability
         generator = self.generator
         discriminator = self.discriminator
