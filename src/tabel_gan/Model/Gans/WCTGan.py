@@ -1,6 +1,7 @@
 # stdlib
 from typing import Any, Callable, List, Optional, Tuple
 import time
+import os
 
 # third party
 import torch
@@ -21,13 +22,10 @@ from ..Extra_Pen.Classifier import Classifier
 from ._gan_utils import get_nolin_act, get_loss_function, format_time, format_time_with_h, gradient_penalty, wasserstein_loss
 from ...Data.data_encoder import DataEncoder
 
-
-
-
-
 # Default parameter
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu' # If device is not set try to use cuda else cpu
 
+# This project is inspired by CTGAN and is an independent implementation of similar ideas.
 
 
 class WCTGan(Base_CTGan):
@@ -225,7 +223,8 @@ class WCTGan(Base_CTGan):
             n_iter_checkpoint: int = None,
             discriminator_num_steps = 5,
             generator_num_steps = 1,
-            lambda_gradient_penalty = 10, 
+            lambda_gradient_penalty = 10,
+            checkpoint_dir = "checkpoints" 
         
         ):
         """
@@ -344,7 +343,7 @@ class WCTGan(Base_CTGan):
 
                     cond_detached = cond.detach()
                     y_hat = discriminator(torch.cat([X_fake, cond_detached], dim=1))
-                    loss_g = torch.mean(y_hat)
+                    loss_g = - torch.mean(y_hat)
 
                     extra_gen_loss = self.compute_extra_loss_generator(X_gen=X_fake, X_real=X_real, cond=cond)
 
@@ -373,8 +372,7 @@ class WCTGan(Base_CTGan):
                 print(f"Epoch {epoch:4d} || Loss Critic: {epoch_loss_critic_train:7.4f} || Loss Gen: {epoch_loss_gen_train:7.4f} || Loss Gen Extra: {epoch_extra_gen_loss:7.4f}|| Avg Time/Epoch: {format_time(avg_time_per_epoch)} || Remaining Time: {format_time_with_h(remaining_time)}")
 
             if n_iter_checkpoint and epoch % n_iter_checkpoint == 0:
-                # TODO: Add code for saving model checkpoints
-                pass
+                self.save_checkpoint(epoch, checkpoint_dir=checkpoint_dir)
 
         return loss_critic_list_train, loss_gen_list_train
 
@@ -395,8 +393,8 @@ class WCTGan(Base_CTGan):
                 cond = cond.to(device)
                 batch_size = X_real.size(0)
 
-                z = torch.randn(batch_size, self.n_units_latent, device=device) # Noise input for the generator
-                noise_input = torch.cat([z, cond], dim=1) # noise with cond 
+                z = torch.randn(batch_size, self.n_units_latent, device=device)  # Noise input for the generator
+                noise_input = torch.cat([z, cond], dim=1)  # noise with condition
                 X_fake = generator.forward(noise_input)
 
                 y_hat_real = discriminator(torch.cat([X_real, cond], dim=1))
@@ -406,7 +404,6 @@ class WCTGan(Base_CTGan):
                 total_loss_critic += loss_critic.item()
 
         avg_loss_critic = total_loss_critic / len(data_loader)
-
         return avg_loss_critic
 
 
@@ -419,36 +416,85 @@ class WCTGan(Base_CTGan):
         discriminator.eval()
 
         total_loss_gen = 0.0
-        with torch.no_grad():  
+
+        with torch.no_grad():
             for X, cond in test_loader:
+                X = X.to(device)
                 cond = cond.to(device)
                 batch_size = X.size(0)
 
-                z = torch.randn(batch_size, self.n_units_latent, device=device) 
+                z = torch.randn(batch_size, self.n_units_latent, device=device) #Noise vec
                 noise_input = torch.cat([z, cond], dim=1)
                 X_fake = generator.forward(noise_input)
 
                 y_hat = discriminator(torch.cat([X_fake, cond], dim=1))
                 loss_g = -torch.mean(y_hat)
 
-                loss_cond = self.compute_condition_loss(X_fake.detach().cpu().numpy(), cond)    # Condition loss
-                total_loss = loss_g + self.lambda_condition_loss_weight * loss_cond #TODO that is not right here 
+                # Calculate extra generator losses
+                extra_gen_loss = self.compute_extra_loss_generator(X_fake, X, cond)
 
+                total_loss = loss_g + extra_gen_loss
                 total_loss_gen += total_loss.item()
 
         avg_loss_gen = total_loss_gen / len(test_loader)
-
         return avg_loss_gen
-
     
+    def save_checkpoint(self, epoch, checkpoint_dir="checkpoints"):
+        os.makedirs(checkpoint_dir, exist_ok=True)
+
+        checkpoint_filename = f"{epoch}_epoch_checkpoint.pt"
+        checkpoint_path = os.path.join(checkpoint_dir, checkpoint_filename)
+
+        self.save(save_path= checkpoint_path)
+        
+
+    def save(self, save_path="wctgan_model.pt"):
+        torch.save({
+            'generator_state_dict': self.generator.state_dict(),
+            'discriminator_state_dict': self.discriminator.state_dict(),
+            'data_encoder': self.data_encoder, 
+            'config': {
+                'n_units_latent': self.n_units_latent,
+                'generator_params': {
+                    'generator_n_units_in': self.n_units_latent,
+                    'generator_n_units_conditional': self.n_units_conditional,
+                    'generator_n_units_out': self.output_space,
+                    'generator_n_layers_hidden': self.generator_n_layers_hidden,
+                    'generator_n_units_hidden': self.generator_n_units_hidden,
+                    'generator_nonlin': self.generator_nonlin,
+                    'generator_nonlin_out': self.generator_nonlin_out,
+                    'generator_batch_norm': self.generator_batch_norm,
+                    'generator_dropout': self.generator_dropout,
+                    'device': self.device
+                },
+                'discriminator_params': {
+                    'discriminator_n_units_in': self.output_space,
+                    'discriminator_units_conditional': self.n_units_conditional,
+                    'discriminator_n_units_hidden': self.discriminator_n_units_hidden,
+                    'discriminator_n_layers_hidden': self.discriminator_n_layers_hidden,
+                    'discriminator_nonlin': self.discriminator_nonlin,
+                    'discriminator_batch_norm': self.discriminator_batch_norm,
+                    'discriminator_dropout': self.discriminator_dropout,
+                    'device': self.device
+                }
+            }
+        }, save_path)
 
 
-    
+    def load(self, load_path="wctgan_model.pt"):
+        checkpoint = torch.load(load_path, map_location=self.device)
+
+        config = checkpoint['config']
+        self.n_units_latent = config['n_units_latent']
+
+        self.generator = Generator(**config['generator_params'])
+        self.discriminator = Discriminator(**config['discriminator_params'])
+
+        self.generator.load_state_dict(checkpoint['generator_state_dict'])
+        self.discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
+        self.data_encoder = checkpoint['data_encoder']
+        print(f"Model loaded from {load_path}")
 
 
-    def save(self, save_path):
-        pass #TODO https://pytorch.org/tutorials/beginner/saving_loading_models.html save multible state dicts append condition coloumns,  seld.data_ecoder  somehow
-
-    def load(self, path):
-        pass #TODO model.load_state_dict(torch.load(PATH, weights_only=True, map_location="cuda:0"))  # it is not so easy to load a model trained on cuda on your cpu 
+    #TODO model.load_state_dict(torch.load(PATH, weights_only=True, map_location="cuda:0"))  # it is not so easy to load a model trained on cuda on your cpu 
 

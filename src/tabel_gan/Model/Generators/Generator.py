@@ -1,6 +1,5 @@
 from typing import Any, Callable, List, Optional, Tuple
 
-
 # third party
 import torch
 from torch import nn
@@ -137,7 +136,7 @@ class Generator(nn.Module):
             gen_data = self.forward(generator_input) 
         return gen_data
 
-
+""""""
 class Generator(nn.Module):
     
     def __init__(
@@ -193,3 +192,4 @@ class Generator(nn.Module):
             generator_input = torch.cat([noise, condition], dim=1) 
             gen_data = self.forward(generator_input) 
         return gen_data
+""""""

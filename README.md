@@ -11,9 +11,11 @@
 </p>
 
 
-## Infos:
-This CTGAN repository is a project I created for fun. Feel free to use it for whatever you want! Due to time constraints, I haven’t provided a tutorial for the different loss functions and other functions, 
-but feel free to explore them on your own
+## Infos
+This Tabular GAN repository is a project I created for fun and training, inspired by the CTGAN paper ([Paper link](https://arxiv.org/pdf/1907.00503), [GitHub repository](https://github.com/sdv-dev/CTGAN)) so it suports conditonal data generation. I implemented the code on my own and added some extra 
+loss functions and other features I wanted to try out.
+
+Due to time constraints, I haven’t provided a tutorial for the different loss functions and other features, but feel free to explore them on your own.
 
 
 ## :rocket: Sample Usage
@@ -58,4 +60,7 @@ syn_df = wctgan.gen(cond_df=cond_df)
 ```
 
 
+## Credits and Acknowledgments
+
+This project is inspired by [CTGAN](https://github.com/sdv-dev/CTGAN) and the methods described in their work.
 

@@ -2,6 +2,8 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score
 from sklearn.metrics import accuracy_score
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 import pandas as pd
 import matplotlib.pyplot as plt
 
@@ -29,19 +31,46 @@ class Benchmark:
                 'Importance': feature_importance
             })
 
-           
             feature_data = feature_data.sort_values(by='Importance', ascending=False)
 
-           
             top_features = feature_data.head(top_n)
 
-            # Plotten und speichern
             plt.figure(figsize=(10, 6))
             plt.barh(top_features['Feature'], top_features['Importance'], color='skyblue')
             plt.xlabel('Feature Importance')
             plt.title(f'Top {top_n} Most Important Features')
-            plt.gca().invert_yaxis()  # Umkehren der y-Achse, damit die wichtigsten Features oben sind
+            plt.gca().invert_yaxis() 
             plt.savefig(plot_path)
             plt.close()
 
         return np.mean(scores)
+    
+
+    def pca_visualization(self, real_data: pd.DataFrame, synthetic_data: pd.DataFrame, plot_path: str = "pca_visualization.png"):
+        """
+        Performs PCA on the combined dataset and plots the first two principal components
+        """
+        combined_data = pd.concat([real_data, synthetic_data], ignore_index=True)
+        labels = np.concatenate([np.ones(len(real_data)), np.zeros(len(synthetic_data))])
+
+        for column in combined_data.columns:
+            if combined_data[column].dtype == 'object':
+                le = LabelEncoder()
+                combined_data[column] = le.fit_transform(combined_data[column])
+
+        scaler = MinMaxScaler()
+        combined_data_scaled = scaler.fit_transform(combined_data)
+
+        pca = PCA(n_components=2)
+        components = pca.fit_transform(combined_data_scaled)
+
+        plt.figure(figsize=(10, 6))
+        plt.scatter(components[labels == 1, 0], components[labels == 1, 1], label='Real Data', alpha=0.5)
+        plt.scatter(components[labels == 0, 0], components[labels == 0, 1], label='Synthetic Data', alpha=0.5)
+        plt.legend()
+        plt.title('PCA Visualization')
+        plt.xlabel('Principal Component 1')
+        plt.ylabel('Principal Component 2')
+        plt.savefig(plot_path)
+        plt.close()
+

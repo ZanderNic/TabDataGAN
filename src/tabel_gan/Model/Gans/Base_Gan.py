@@ -1,6 +1,5 @@
 # stdlib
 from typing import Any, Callable, List, Optional, Tuple
-import time
 
 # third party
 import torch
@@ -10,13 +9,13 @@ import pandas as pd
 from torch.utils.data import DataLoader, random_split
 
 # Projects imports
-from ...Data.dataset import CTGan_data_set
-from ..Extra_Pen.Classifier import Classifier
+from table_gan.Data.dataset import CTGan_data_set
+from table_gan.Extra_Pen.Classifier import Classifier
 
 # Default parameter
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu' # If device is not set try to use cuda else cpu
 
-
+# This project is inspired by CTGAN and is an independent implementation of similar ideas.
 
 class Base_CTGan(nn.Module):
     def __init__(self):
@@ -25,8 +24,8 @@ class Base_CTGan(nn.Module):
 
     def preprocess_and_load_data(self, ctgan_data_set, batch_size)-> DataLoader:
         data = ctgan_data_set.dataframe()
-        conditiond_encoded = self.cond_encoder.get_cond_from_data(data)
-        data_encoded = self.data_encoder(data)
+        conditiond_encoded = self.data_encoder.get_cond_from_data(data)
+        data_encoded = self.data_encoder.transform_data_df_without_condition(data)
 
         dataset = torch.utils.data.TensorDataset(
             data_encoded, 
@@ -37,8 +36,8 @@ class Base_CTGan(nn.Module):
 
     def preprocess_and_load_data_train_test(self, ctgan_data_set, batch_size, train_size = 0.8):
         data = ctgan_data_set.dataframe()
-        conditiond_encoded = self.cond_encoder.get_cond_from_data(data)
-        data_encoded = self.data_encoder(data)
+        conditiond_encoded = self.data_encoder.get_cond_from_data(data)
+        data_encoded = self.data_encoder.transform_data_df_without_condition(data)
 
         dataset = torch.utils.data.TensorDataset(
             data_encoded, 
@@ -112,8 +111,8 @@ class Base_CTGan(nn.Module):
         return train_loader, test_loader
     
 
-    def train_classifier(self, dataset : CTGan_data_set, train_size:float = 0.8): 
-        train_loader, test_loader = self.preprocess_and_load_train_test_classifier(ctgan_data_set=dataset, batch_size=self.classifier_batch_size, train_size=train_size)
+    def train_classifier(self, ctgan_data_set : CTGan_data_set, train_size:float = 0.8): 
+        train_loader, test_loader = self.preprocess_and_load_train_test_classifier(ctgan_data_set=ctgan_data_set, batch_size=self.classifier_batch_size, train_size=train_size)
         self.classifier.fit(train_loader=train_loader, test_loader=test_loader, lr=self.classifier_lr, opt_betas=self.classifier_opt_betas, epochs = self.classifier_n_iter, patience=self.classifier_patience) 
 
 
@@ -190,7 +189,7 @@ class Base_CTGan(nn.Module):
 
 
     def compute_correlation_loss(self, gen_data: torch.tensor, real_data:torch.tensor) -> torch.tensor:
-        # Sorce: https://arxiv.org/html/2405.16971v1
+        # Source: https://arxiv.org/html/2405.16971v1
         mean_gen_data = torch.mean(gen_data, dim=0)
         mean_real_data = torch.mean(real_data, dim=0)
 
@@ -211,7 +210,7 @@ class Base_CTGan(nn.Module):
 
 
     def compute_mean_loss(self, gen_data: torch.tensor) -> torch.tensor:
-        # Sorce: https://arxiv.org/html/2405.16971v1
+        # Source: https://arxiv.org/html/2405.16971v1
         mean_gen_data = torch.mean(gen_data, dim=0)
         mean_real_data = self.real_data_mean.to(self.device)
         
@@ -276,20 +275,20 @@ class Base_CTGan(nn.Module):
 
 
     def save(self, save_path):
-        pass #TODO https://pytorch.org/tutorials/beginner/saving_loading_models.html save multible state dicts append condition coloumns, self.cond_encoder somehow seld.data_ecoder also somehow
+        raise NotImplementedError
 
     def load(self, path):
-        pass #TODO model.load_state_dict(torch.load(PATH, weights_only=True, map_location="cuda:0"))  # it is not so easy to load a model trained on cuda on your cpu 
+        raise NotImplementedError
 
     
     def fit(self, ctgan_data_set: CTGan_data_set):
-        pass
+        raise NotImplementedError
 
 
     def evaluate_discriminator(self, data_loader: DataLoader):
-        pass
+        raise NotImplementedError
 
 
     def evaluate_generator(self, test_loader: DataLoader):
-        pass
+        raise NotImplementedError
 

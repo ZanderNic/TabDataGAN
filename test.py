@@ -45,21 +45,24 @@ data_set = CTGan_data_set(
 
 
 wctgan = WCTGan(
-    n_units_latent=500
-                
-                
+    n_units_latent=500                
 )#generator_class=Conv_Generator, discriminator_class=Conv_Discriminator)
 
 
 crit_loss, gen_loss = wctgan.fit(
-    data_set, 
-    n_epochs=500, 
-    discriminator_num_steps=5,
-    generator_num_steps=1,
-    lambda_gradient_penalty=10,
+   data_set, 
+   n_epochs=110, 
+   discriminator_num_steps=5,
+   generator_num_steps=1,
+   lambda_gradient_penalty=10,
 )
 
-plot_gan_losses(crit_loss, gen_loss)
+wctgan.save()
+
+wctgan.load()
+
+
+#plot_gan_losses(crit_loss, gen_loss)
 
 ## Generate new data
 cond_df = pd.DataFrame([{"target" : 1}]*160)
