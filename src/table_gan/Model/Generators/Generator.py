@@ -5,7 +5,7 @@ import torch
 from torch import nn
 
 # Projects imports
-from ..Gans._gan_utils import get_nolin_act, find_w, init_weights
+from table_gan.Model.Gans._gan_utils import get_nolin_act, find_w, init_weights
 
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu' # If device is not set try to use cuda else cpu

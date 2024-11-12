@@ -12,15 +12,14 @@ from torch.utils.data import DataLoader, random_split
 
 
 # Projects imports
-from .Base_Gan import Base_CTGan
+from table_gan.Model.Gans.Base_Gan import Base_CTGan
 
-from ..Generators.Generator import Generator
-from ..Critic.critic import Discriminator
+from table_gan.Model.Generators.Generator import Generator
+from table_gan.Model.Critic.critic import Discriminator
 
-from ...Data.dataset import CTGan_data_set
-from ..Extra_Pen.Classifier import Classifier
-from ._gan_utils import get_nolin_act, get_loss_function, format_time, format_time_with_h, gradient_penalty, wasserstein_loss
-from ...Data.data_encoder import DataEncoder
+from table_gan.Data.dataset import CTGan_data_set
+from table_gan.Model.Gans._gan_utils import format_time, format_time_with_h, gradient_penalty, wasserstein_loss
+from table_gan.Data.data_encoder import DataEncoder
 
 # Default parameter
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu' # If device is not set try to use cuda else cpu

@@ -12,7 +12,8 @@
 
 
 ## Infos
-This Tabular GAN repository is a project I created for fun and training, inspired by the CTGAN paper ([Paper link](https://arxiv.org/pdf/1907.00503), [GitHub repository](https://github.com/sdv-dev/CTGAN)) so it suports conditonal data generation. I implemented the code on my own and added some extra 
+This Tabular GAN repository is a project I created for fun and training, inspired by the CTGAN paper ([Paper link](https://arxiv.org/pdf/1907.00503)) and other 
+papers that where relesed in the Gan context namely the CTAB-GAN ([Paper link](https://arxiv.org/abs/2102.08369)). The implementation suports conditonal data generation. I implemented the code on my own and added some extra 
 loss functions and other features I wanted to try out.
 
 Due to time constraints, I haven’t provided a tutorial for the different loss functions and other features, but feel free to explore them on your own.
@@ -22,6 +23,7 @@ Due to time constraints, I haven’t provided a tutorial for the different loss 
 
 ```bash
 $ git clone https://github.com/ZanderNic/SATGan.git
+pip install .
 ```
 TODO EDIT
 
@@ -29,9 +31,10 @@ TODO EDIT
 
 * Load and train a CTGAN
 
+
 ```python
-from src.Model.Gans.WCTGan import WCTGan
-from src.Data.dataset import CTGan_data_set
+from table_gan.Model.Gans.WCTGan import WCTGan
+from table_gan.Data.dataset import CTGan_data_set
 from sklearn.datasets import load_iris
 
 iris = load_iris(as_frame=True)
@@ -62,5 +65,5 @@ syn_df = wctgan.gen(cond_df=cond_df)
 
 ## Credits and Acknowledgments
 
-This project is inspired by [CTGAN](https://github.com/sdv-dev/CTGAN) and the methods described in their work.
+This project is inspired by [CTGAN](https://arxiv.org/pdf/1907.00503) and the methods described in their work.
 

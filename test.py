@@ -8,20 +8,22 @@ import os
 def plot_gan_losses(crit_loss, gen_loss,
                     critic_color='blue',
                     gen_color='orange',  
-                    save_path="train_loss.png"
+                    save_path=None
     ):
-    
-    plt.figure(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-    plt.plot(crit_loss, label="Critic Loss", color=critic_color, linestyle='-', linewidth=1.5)
-    plt.plot(gen_loss, label="Generator Loss", color=gen_color, linestyle='-', linewidth=1.5)
+    ax.plot(crit_loss, label="Critic Loss", color=critic_color, linestyle='-', linewidth=1.5)
+    ax.plot(gen_loss, label="Generator Loss", color=gen_color, linestyle='-', linewidth=1.5)
   
-    plt.xlabel("Epochs")
-    plt.ylabel("Loss")
-    plt.title("Train and Validation Losses for Generator and Critic")
-    plt.legend()
+    ax.set_xlabel("Epochs")
+    ax.set_ylabel("Loss")
+    ax.set_title("Train and Validation Losses for Generator and Critic")
+    ax.legend()
 
-    plt.savefig(save_path)
+    if save_path:
+        fig.savefig(save_path)
+
+    return fig
 
 # This Projekt imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -32,6 +34,7 @@ from src.Benchmark.benchmark import Benchmark
 
 from src.Model.Generators.Generator import Conv_Generator
 from src.Model.Critic.critic import Conv_Discriminator
+
 
 
 iris = load_iris(as_frame=True)

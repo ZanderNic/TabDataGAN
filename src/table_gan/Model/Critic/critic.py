@@ -8,7 +8,6 @@ from torch import nn
 # Projekt imports 
 from table_gan.Model.Gans._gan_utils import get_nolin_act, find_w, init_weights
 
-
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 

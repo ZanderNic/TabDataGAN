@@ -1,6 +1,6 @@
 from torch import nn, autograd
 import torch
-
+import matplotlib.pyplot as plt
 
 
 def format_time(seconds):
@@ -8,6 +8,7 @@ def format_time(seconds):
     seconds_int = int(seconds % 60)
     milliseconds = int((seconds % 1) * 1000)
     return f"{minutes:02d}min:{seconds_int:02d}s:{milliseconds:03d}ms"
+
 
 def format_time_with_h(seconds):
     hours = int(seconds // 3600)
@@ -68,6 +69,7 @@ def gradient_penalty(discriminator, X_real_cond, X_fake_cond, device):
 
     return gradient_penalty
 
+
 def wasserstein_loss(y_real, y_fake):
     return torch.mean(y_real) - torch.mean(y_fake)
 
@@ -91,3 +93,24 @@ def init_weights(m):
         nn.init.kaiming_normal_(m.weight, a=0.2, nonlinearity='leaky_relu')  # Kaiming initialization for Conv2d layers
         if m.bias is not None:
             nn.init.zeros_(m.bias)
+
+
+def plot_gan_losses(crit_loss, gen_loss,
+                    critic_color='blue',
+                    gen_color='orange',  
+                    save_path=None
+    ):
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    ax.plot(crit_loss, label="Critic Loss", color=critic_color, linestyle='-', linewidth=1.5)
+    ax.plot(gen_loss, label="Generator Loss", color=gen_color, linestyle='-', linewidth=1.5)
+  
+    ax.set_xlabel("Epochs")
+    ax.set_ylabel("Loss")
+    ax.set_title("Train and Validation Losses for Generator and Critic")
+    ax.legend()
+
+    if save_path:
+        fig.savefig(save_path)
+
+    return fig
