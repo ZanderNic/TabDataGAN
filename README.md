@@ -5,10 +5,12 @@
 ---
 
 <p align="center">
-    <a href="#"><img src="https://img.shields.io/badge/Tabular%20Data-%E2%9C%85-green"></a>
+    <a href="#"><img src="https://img.shields.io/badge/Tabular%20Data%20Generation-%E2%9C%85-green"></a>
+    <a href="#"><img src="https://img.shields.io/badge/Conditional%20Generation-%F0%9F%94%A5-orange"></a>
     <a href="#"><img src="https://img.shields.io/badge/Generative%20AI-%E2%9A%A1-yellow"></a>
     <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue"></a>
 </p>
+
 
 
 ## Infos
@@ -23,9 +25,9 @@ Due to time constraints, I haven’t provided a tutorial for the different loss 
 
 ```bash
 $ git clone https://github.com/ZanderNic/SATGan.git
-pip install .
+$ pip install .
 ```
-TODO EDIT
+
 
 ### Generate data
 
