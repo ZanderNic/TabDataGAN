@@ -40,7 +40,7 @@ class WCTGan(Base_CTGan):
     def __init__(
         self,
 
-        n_units_latent: int = 500, 
+        n_units_latent: int = 300, 
         
         # Generator
         generator_class: nn.Module = Generator,
@@ -49,12 +49,11 @@ class WCTGan(Base_CTGan):
         generator_nonlin: str = "relu",
         generator_nonlin_out: str = "sigmoid", # This function given here should return a number between ]0; 1] because the data is processed and scaled between ]0; 1]
         generator_batch_norm: bool = False,
-        generator_dropout: float = 0,
+        generator_dropout: float = 0.1,
         generator_lr: float = 0.0001,
         generator_weight_decay: float = 0.0001,
         generator_opt_betas: tuple = (0.5, 0.999),
    
-
         # discriminator
         discriminator_class: nn.Module = Discriminator,
         discriminator_n_layers_hidden: int = 2,
@@ -83,17 +82,17 @@ class WCTGan(Base_CTGan):
         lambda_cond_loss_weight: float = 1,
         lambda_cond_classifier_loss_weight: float = 0,
         lambda_mean_loss_weight: float = 0, # values like 1 or 0 make sence (turn it of or on dont weight it)
-        lambda_correlation_loss_weight: float = 1, # values like 1 or 0 make sence (turn it of or on dont weight it)
+        lambda_correlation_loss_weight: float = 0, # values like 1 or 0 make sence (turn it of or on dont weight it)
         lambda_cov_weight : float = 0, 
 
         # training
-        batch_size: int = 128,
+        batch_size: int = 200,
         random_state: int = None,
         device: Any = DEVICE,
        
         # data transfomration
         cont_transform_methode : str = "min_max", # how to transfomr continuous numeric coloumns eathter "min_max" or "mode" 
-        max_continuous_modes: int = 30, # if cont_transform_methode is "mode" this parameter gives the number of modes that are estimatet 
+        max_continuous_modes: int = 10, # if cont_transform_methode is "mode" this parameter gives the number of modes that are estimatet 
     
         **kwargs
     ):
@@ -217,14 +216,13 @@ class WCTGan(Base_CTGan):
         
     def fit(self, 
             ctgan_data_set: CTGan_data_set,
-            n_epochs: int = 300,
+            n_epochs: int = 600,
             n_iter_print: int = 10,
             n_iter_checkpoint: int = None,
             discriminator_num_steps = 5,
             generator_num_steps = 1,
             lambda_gradient_penalty = 10,
             checkpoint_dir = "checkpoints" 
-        
         ):
         """
 
@@ -233,7 +231,7 @@ class WCTGan(Base_CTGan):
         
         """
 
-        if not (self.generator and self.discriminator and self.classifier):
+        if not (self.generator and self.discriminator and self.data_encoder):
 
             self.cond_cols = ctgan_data_set.cond_cols()     # conditional columns 
             self.cat_cols = ctgan_data_set.cat_cols()       # categorical columns
@@ -243,12 +241,12 @@ class WCTGan(Base_CTGan):
             # init data encoder 
             self.data_encoder = DataEncoder(
                 ctgan_data_set.dataframe(),
-                cond_cols=self.cond_cols,
-                categorical_columns=self.cat_cols,
-                numeric_columns=self.num_cols,
-                ordinal_columns=self.ord_cols,
+                cond_cols= self.cond_cols,
+                categorical_columns= self.cat_cols,
+                numeric_columns= self.num_cols,
+                ordinal_columns= self.ord_cols,
                 cont_transform_method = self.cont_transform_methode,
-                max_continuous_modes = self.max_continuous_modes
+                gmm_n_components= self.max_continuous_modes
             )
 
             # Get output space of generator and units conditional for both generator and discriminator
@@ -486,14 +484,12 @@ class WCTGan(Base_CTGan):
         config = checkpoint['config']
         self.n_units_latent = config['n_units_latent']
 
-        self.generator = Generator(**config['generator_params'])
-        self.discriminator = Discriminator(**config['discriminator_params'])
+        self.generator = Generator(**config['generator_params']).to(self.device)
+        self.discriminator = Discriminator(**config['discriminator_params']).to(self.device)
 
         self.generator.load_state_dict(checkpoint['generator_state_dict'])
         self.discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
         self.data_encoder = checkpoint['data_encoder']
         print(f"Model loaded from {load_path}")
 
-
-    #TODO model.load_state_dict(torch.load(PATH, weights_only=True, map_location="cuda:0"))  # it is not so easy to load a model trained on cuda on your cpu 
 

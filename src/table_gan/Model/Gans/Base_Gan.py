@@ -267,9 +267,8 @@ class Base_CTGan(nn.Module):
 
             gen_data_raw = self.generator.generate(n_samples=cond_tensor.shape[0], condition=cond_tensor)
             gen_data_np = gen_data_raw.detach().cpu().numpy() 
-            gen_data_df = pd.DataFrame(gen_data_np) 
 
-            gen_data = self.data_encoder.inv_transform_data(gen_data_df)
+            gen_data = self.data_encoder.inv_transform_data(gen_data_np)
             
             return gen_data
 
@@ -279,7 +278,6 @@ class Base_CTGan(nn.Module):
 
     def load(self, path):
         raise NotImplementedError
-
     
     def fit(self, ctgan_data_set: CTGan_data_set):
         raise NotImplementedError
