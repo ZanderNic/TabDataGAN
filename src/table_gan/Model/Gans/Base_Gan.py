@@ -141,7 +141,7 @@ class Base_CTGan(nn.Module):
 
         return total_extra_loss
 
-
+    # TODO this two implementations dosent work with CTGan encoding or GMM 
     def compute_condition_loss(self, gen_data:torch.tensor, real_cond:torch.tensor):
         cond_x_gen = self.data_encoder.get_condition_from_tensor(gen_data) 
 
@@ -164,7 +164,7 @@ class Base_CTGan(nn.Module):
 
         return loss_condition
 
-
+    # TODO this two implementations dosent work with CTGan encoding or GMM
     def compute_condition_classifier_loss(self, gen_data:torch.tensor, real_cond:torch.tensor):
         x_gen_data = self.data_encoder.get_only_data_from_tensor(gen_data) 
 

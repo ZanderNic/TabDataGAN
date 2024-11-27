@@ -47,7 +47,8 @@ class WCTGan(Base_CTGan):
         generator_n_layers_hidden: int = 2,
         generator_n_units_hidden: int = 500,
         generator_nonlin: str = "relu",
-        generator_nonlin_out: str = "sigmoid", # This function given here should return a number between ]0; 1] because the data is processed and scaled between ]0; 1]
+        generator_nonlin_out_num: str = "leaky_relu",
+        generator_nonlin_out_cat: str = "sigmoid",
         generator_batch_norm: bool = False,
         generator_dropout: float = 0.1,
         generator_lr: float = 0.0001,
@@ -92,7 +93,7 @@ class WCTGan(Base_CTGan):
        
         # data transfomration
         cont_transform_methode : str = "min_max", # how to transfomr continuous numeric coloumns eathter "min_max" or "mode" 
-        max_continuous_modes: int = 10, # if cont_transform_methode is "mode" this parameter gives the number of modes that are estimatet 
+        max_continuous_modes: int = 20, # if cont_transform_methode is "mode" this parameter gives the number of modes that are estimatet 
     
         **kwargs
     ):
@@ -105,13 +106,13 @@ class WCTGan(Base_CTGan):
         self.generator_n_layers_hidden= generator_n_layers_hidden
         self.generator_n_units_hidden= generator_n_units_hidden
         self.generator_nonlin= generator_nonlin
-        self.generator_nonlin_out= generator_nonlin_out
         self.generator_batch_norm= generator_batch_norm
         self.generator_dropout= generator_dropout
         self.generator_lr = generator_lr
         self.generator_weight_decay = generator_weight_decay
         self.generator_opt_betas = generator_opt_betas
-
+        self.generator_nonlin_out_num = generator_nonlin_out_num
+        self.generator_nonlin_out_cat = generator_nonlin_out_cat
 
         # discriminator
         self.discriminator_class= discriminator_class
@@ -255,16 +256,22 @@ class WCTGan(Base_CTGan):
 
             # init generator
             self.generator = self.generator_class(
-                generator_n_units_in= self.n_units_latent,
-                generator_n_units_conditional= self.n_units_conditional,
-                generator_n_units_out= self.output_space, 
-                generator_n_layers_hidden= self.generator_n_layers_hidden,
-                generator_n_units_hidden  = self.generator_n_units_hidden,
-                generator_nonlin= self.generator_nonlin, 
-                generator_nonlin_out= self.generator_nonlin_out, 
-                generator_batch_norm= self.generator_batch_norm, 
-                generator_dropout= self.generator_dropout, 
-                device= self.device, 
+                generator_n_units_in=self.n_units_latent,
+                generator_n_units_conditional=self.n_units_conditional,
+                generator_n_units_out=self.output_space,
+                units_per_column=self.data_encoder.get_units_per_column(),
+                columns_in_order=self.data_encoder.cols(),
+                categorical_columns=self.data_encoder.categorical_columns,
+                numerical_columns=self.data_encoder.numeric_columns,
+                units_per_col=self.data_encoder.get_units_per_column(),  # If required
+                generator_n_layers_hidden=self.generator_n_layers_hidden,
+                generator_n_units_hidden=self.generator_n_units_hidden,
+                generator_nonlin=self.generator_nonlin,
+                generator_nonlin_out_num=self.generator_nonlin_out_num,
+                generator_nonlin_out_cat=self.generator_nonlin_out_cat,
+                generator_batch_norm=self.generator_batch_norm,
+                generator_dropout=self.generator_dropout,
+                device=self.device,
                 **self.kwargs
             )
 

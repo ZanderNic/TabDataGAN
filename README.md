@@ -16,9 +16,9 @@
 
 
 ## Infos
-This repository hosts a Tabular GAN project that I created for fun and learning. It was inspired by the CTGAN paper ([Paper](https://arxiv.org/pdf/1907.00503)) and other works in the GAN context, including CTAB-GAN 
-([Paper](https://arxiv.org/abs/2102.08369)). My implementation supports conditional data generation and includes several custom loss functions and additional features that I experimented with.
+This repository hosts a Tabular GAN project that I created for fun and learning. It was inspired by the CTGAN paper ([Paper](https://arxiv.org/pdf/1907.00503)) and other works in the GAN domain, including CTAB-GAN ([Paper](https://arxiv.org/abs/2102.08369)). My implementation supports conditional data generation and includes extra loss functions and additional features that I experimented with.
 
+The implementation is not an exact copy of the CTGAN paper, as the specific training sample sampling process introduced in their work is not implemented here. If you need that feature, you can use the authors' official implementation.
 
 It's worth noting that GANs can be quite challenging to train effectively, especially for tabular data. This difficulty is illustrated in Figure 1 of the GReaT paper ([Paper](https://openreview.net/forum?id=cEygmQNOeI)), which demonstrates how even simple datasets can be difficult to model with GANs.
 
