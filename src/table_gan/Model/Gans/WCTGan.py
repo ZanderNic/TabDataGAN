@@ -92,7 +92,7 @@ class WCTGan(Base_CTGan):
         device: Any = DEVICE,
        
         # data transfomration
-        cont_transform_methode : str = "min_max", # how to transfomr continuous numeric coloumns eathter "min_max" or "mode" 
+        cont_transform_methode : str = "CTGAN", # how to transfomr continuous numeric coloumns eathter "min_max" or "CTGAN" if you choose min max try to train for longer time ;D
         max_continuous_modes: int = 20, # if cont_transform_methode is "mode" this parameter gives the number of modes that are estimatet 
     
         **kwargs
@@ -456,47 +456,110 @@ class WCTGan(Base_CTGan):
         torch.save({
             'generator_state_dict': self.generator.state_dict(),
             'discriminator_state_dict': self.discriminator.state_dict(),
-            'data_encoder': self.data_encoder, 
+            'data_encoder': self.data_encoder,
             'config': {
                 'n_units_latent': self.n_units_latent,
+                'random_state': self.random_state,
+                'batch_size': self.batch_size,
+                'device': str(self.device),
+                'n_units_conditional': self.n_units_conditional,
+                'output_space': self.output_space,
+                'data_transform_params': {
+                    'cont_transform_method': self.cont_transform_methode,
+                    'max_continuous_modes': self.max_continuous_modes
+                },
+                'lambda_weights': {
+                    'lambda_cond_loss_weight': self.lambda_cond_loss_weight,
+                    'lambda_cond_classifier_loss_weight': self.lambda_cond_classifier_loss_weight,
+                    'lambda_mean_loss_weight': self.lambda_mean_loss_weight,
+                    'lambda_correlation_loss_weight': self.lambda_correlation_loss_weight,
+                    'lambda_cov_weight': self.lambda_cov_weight
+                },
                 'generator_params': {
-                    'generator_n_units_in': self.n_units_latent,
-                    'generator_n_units_conditional': self.n_units_conditional,
-                    'generator_n_units_out': self.output_space,
                     'generator_n_layers_hidden': self.generator_n_layers_hidden,
                     'generator_n_units_hidden': self.generator_n_units_hidden,
                     'generator_nonlin': self.generator_nonlin,
-                    'generator_nonlin_out': self.generator_nonlin_out,
+                    'generator_nonlin_out_num': self.generator_nonlin_out_num,
+                    'generator_nonlin_out_cat': self.generator_nonlin_out_cat,
                     'generator_batch_norm': self.generator_batch_norm,
-                    'generator_dropout': self.generator_dropout,
-                    'device': self.device
+                    'generator_dropout': self.generator_dropout
                 },
                 'discriminator_params': {
-                    'discriminator_n_units_in': self.output_space,
-                    'discriminator_units_conditional': self.n_units_conditional,
-                    'discriminator_n_units_hidden': self.discriminator_n_units_hidden,
                     'discriminator_n_layers_hidden': self.discriminator_n_layers_hidden,
+                    'discriminator_n_units_hidden': self.discriminator_n_units_hidden,
                     'discriminator_nonlin': self.discriminator_nonlin,
                     'discriminator_batch_norm': self.discriminator_batch_norm,
-                    'discriminator_dropout': self.discriminator_dropout,
-                    'device': self.device
+                    'discriminator_dropout': self.discriminator_dropout
+                },
+                'columns': {
+                    'cond_cols': self.cond_cols,
+                    'cat_cols': self.cat_cols,
+                    'num_cols': self.num_cols,
+                    'ord_cols': self.ord_cols
                 }
             }
         }, save_path)
 
 
+
+
     def load(self, load_path="wctgan_model.pt"):
-        checkpoint = torch.load(load_path, map_location=self.device)
-
+        checkpoint = torch.load(load_path, map_location=torch.device(self.device))
         config = checkpoint['config']
+
         self.n_units_latent = config['n_units_latent']
+        self.random_state = config['random_state']
+        self.batch_size = config['batch_size']
+        self.device = torch.device(config['device'])
+        self.n_units_conditional = config['n_units_conditional']
+        self.output_space = config['output_space']
+        self.cont_transform_methode = config['data_transform_params']['cont_transform_method']
+        self.max_continuous_modes = config['data_transform_params']['max_continuous_modes']
 
-        self.generator = Generator(**config['generator_params']).to(self.device)
-        self.discriminator = Discriminator(**config['discriminator_params']).to(self.device)
+        lambda_weights = config['lambda_weights']
+        self.lambda_cond_loss_weight = lambda_weights['lambda_cond_loss_weight']
+        self.lambda_cond_classifier_loss_weight = lambda_weights['lambda_cond_classifier_loss_weight']
+        self.lambda_mean_loss_weight = lambda_weights['lambda_mean_loss_weight']
+        self.lambda_correlation_loss_weight = lambda_weights['lambda_correlation_loss_weight']
+        self.lambda_cov_weight = lambda_weights['lambda_cov_weight']
 
-        self.generator.load_state_dict(checkpoint['generator_state_dict'])
-        self.discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
         self.data_encoder = checkpoint['data_encoder']
-        print(f"Model loaded from {load_path}")
+        if self.data_encoder is None:
+            raise ValueError("Data encoder could not be loaded from the checkpoint.")
+
+        columns = config['columns']
+        self.cond_cols = columns['cond_cols']
+        self.cat_cols = columns['cat_cols']
+        self.num_cols = columns['num_cols']
+        self.ord_cols = columns['ord_cols']
+
+        generator_params = config['generator_params']
+        generator_params.update({
+            'generator_n_units_in': self.n_units_latent,
+            'generator_n_units_conditional': self.n_units_conditional,
+            'generator_n_units_out': self.output_space,
+            'units_per_column': self.data_encoder.get_units_per_column(),
+            'columns_in_order': self.data_encoder.cols(),
+            'categorical_columns': self.data_encoder.categorical_columns,
+            'numerical_columns': self.data_encoder.numeric_columns,
+            'units_per_col': self.data_encoder.get_units_per_column()
+        })
+
+        self.generator = Generator(**generator_params).to(self.device)
+        self.generator.load_state_dict(checkpoint['generator_state_dict'])
+
+        discriminator_params = config['discriminator_params']
+        discriminator_params.update({
+            'discriminator_n_units_in': self.output_space,
+            'discriminator_units_conditional': self.n_units_conditional
+        })
+
+        self.discriminator = Discriminator(**discriminator_params).to(self.device)
+        self.discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
+
+
+
+
+
 
 

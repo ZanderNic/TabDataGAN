@@ -76,7 +76,7 @@ class Generator(nn.Module):
             end = start + units
             feature_output = x[:, start:end]
             if col_name in self.categorical_columns:
-                feature_output = self.generator_nonlin_out_cat(feature_output, dim=1) 
+                feature_output = self.generator_nonlin_out_cat(feature_output) 
               
 
             elif col_name in self.numerical_columns:
@@ -86,7 +86,7 @@ class Generator(nn.Module):
 
                 if units > 1:
                     one_hot_part = feature_output[:, 1:]
-                    one_hot_part = self.generator_nonlin_out_cat(one_hot_part, dim=1) 
+                    one_hot_part = self.generator_nonlin_out_cat(one_hot_part) 
                     numerical_part = numerical_part.unsqueeze(1)
                     feature_output = torch.cat([numerical_part, one_hot_part], dim=1)
                 else:

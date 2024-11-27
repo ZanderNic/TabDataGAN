@@ -13,11 +13,6 @@ class DataEncoder(object):
     Min-Max Scaling:
         - Transforms numerical data to the range [0, 1] using min-max normalization.
 
-    Gaussian Mixture Model (GMM) Encoding:
-        - Applies a Gaussian Mixture Model to decompose numerical data into probabilistic responsibilities for multiple Gaussian components.
-        - Encodes the data as probabilities across GMM components.
-        - Can have issues with dominant responsibilities (one component dominating others, making it difficult for the generator to learn).
-
     CTGAN-style Encoding:
         - Based on the methodology from the CTGAN paper.
         - Uses GMM responsibilities to randomly sample a component according to their probabilities.
@@ -34,8 +29,8 @@ class DataEncoder(object):
             numeric_columns: list,
             cond_cols: list,
             random_state: int = None,
-            cont_transform_method: str = "CTGAN",  # "min_max", "GMM", or "CTGAN"
-            gmm_n_components: int = 30  # Number of GMM components for GMM and CTGAN transformation
+            cont_transform_method: str = "CTGAN",  # "min_max" or "CTGAN"
+            gmm_n_components: int = 30  # Number of GMM components for CTGAN transformation
     ):
         self.cont_transform_method = cont_transform_method
 
@@ -65,7 +60,7 @@ class DataEncoder(object):
     def preprocess_columns(self, df: pd.DataFrame):
         df = df.copy()
 
-        if self.cont_transform_method in ["GMM", "CTGAN"]:
+        if self.cont_transform_method == "CTGAN":
             print("Starting transformation with GMM; this may take a while.")
 
         for index, column in enumerate(self.columns_in_order):
@@ -87,7 +82,7 @@ class DataEncoder(object):
                     self.encoders_in_order.append(scaler)
                     self.units_in_order.append(1)
 
-                elif self.cont_transform_method in ["GMM", "CTGAN"]:
+                elif self.cont_transform_method == "CTGAN":
                     gmm = GaussianMixture(
                         n_components=self.gmm_n_components,
                         covariance_type='full',
@@ -95,12 +90,9 @@ class DataEncoder(object):
                     )
                     gmm.fit(df[[column]].values)
                     self.encoders_in_order.append(gmm)
-                    if self.cont_transform_method == "CTGAN":
-                        self.units_in_order.append(self.gmm_n_components + 1)  # Number of components + alpha
-                    else:
-                        self.units_in_order.append(self.gmm_n_components)
+                    self.units_in_order.append(self.gmm_n_components + 1)  # alpha +  Number of components 
                 else:
-                    raise ValueError(f"The cont_transform_method '{self.cont_transform_method}' does not exist. Please use 'min_max', 'GMM', or 'CTGAN'.")
+                    raise ValueError(f"The cont_transform_method '{self.cont_transform_method}' does not exist. Please use 'min_max' or 'CTGAN'.")
 
         self.encoder_n_dim = sum(self.units_in_order)
         self.encode_n_cond_dim = sum([self.units_in_order[i] for i in self.index_cond])
@@ -123,24 +115,21 @@ class DataEncoder(object):
                 if self.cont_transform_method == "min_max":
                     encoded_data = encoder.transform(df_encoded[[column]])
                     encoded_list.append(torch.tensor(encoded_data, dtype=torch.float32))
-                elif self.cont_transform_method == "GMM":
-                    responsibilities = encoder.predict_proba(df_encoded[[column]].values)
-                    encoded_list.append(torch.tensor(responsibilities, dtype=torch.float32))
+
                 elif self.cont_transform_method == "CTGAN":
                     responsibilities = encoder.predict_proba(df_encoded[[column]].values)
-                    # Sample the component according to responsibilities
-                    selected_components = np.array([np.random.choice(self.gmm_n_components, p=r) for r in responsibilities])
+                    selected_components = np.array([np.random.choice(self.gmm_n_components, p=r) for r in responsibilities])     # Sample the component according to responsibilities
                     one_hot_encoded = np.eye(self.gmm_n_components)[selected_components]
                     means = encoder.means_.flatten()
                     stds = np.sqrt(encoder.covariances_).flatten()
                     selected_means = means[selected_components]
                     selected_stds = stds[selected_components]
-                    # Calculate alpha dividing by 4 * standard deviation
-                    alpha = (df_encoded[[column]].values.flatten() - selected_means) / (4 * selected_stds)
+                    alpha = (df_encoded[[column]].values.flatten() - selected_means) / (4 * selected_stds)  # Calculate alpha dividing by 4 * standard deviation
                     alpha = alpha.reshape(-1, 1)
-                    transformed = np.hstack([one_hot_encoded, alpha])
+                    transformed = np.hstack([alpha, one_hot_encoded])
                     encoded_list.append(torch.tensor(transformed, dtype=torch.float32))
-
+                else:
+                    raise ValueError(f"The cont_transform_method '{self.cont_transform_method}' does not exist. Please use 'min_max' or 'CTGAN'.")
         data_encoded_final = torch.cat(encoded_list, dim=1)
 
         return data_encoded_final
@@ -160,24 +149,20 @@ class DataEncoder(object):
                 if self.cont_transform_method == "min_max":
                     encoded_data = encoder.transform(cond_df_encoded[[column]])
                     encoded_list.append(torch.tensor(encoded_data, dtype=torch.float32))
-                elif self.cont_transform_method == "GMM":
-                    responsibilities = encoder.predict_proba(cond_df_encoded[[column]].values)
-                    encoded_list.append(torch.tensor(responsibilities, dtype=torch.float32))
                 elif self.cont_transform_method == "CTGAN":
                     responsibilities = encoder.predict_proba(cond_df_encoded[[column]].values)
-                    # Sample the component according to responsibilities
                     selected_components = np.array([np.random.choice(self.gmm_n_components, p=r) for r in responsibilities])
                     one_hot_encoded = np.eye(self.gmm_n_components)[selected_components]
                     means = encoder.means_.flatten()
                     stds = np.sqrt(encoder.covariances_).flatten()
                     selected_means = means[selected_components]
                     selected_stds = stds[selected_components]
-                    # Calculate alpha dividing by 4 * standard deviation
                     alpha = (cond_df_encoded[[column]].values.flatten() - selected_means) / (4 * selected_stds)
                     alpha = alpha.reshape(-1, 1)
                     transformed = np.hstack([one_hot_encoded, alpha])
                     encoded_list.append(torch.tensor(transformed, dtype=torch.float32))
-
+                else:
+                    raise ValueError(f"The cont_transform_method '{self.cont_transform_method}' does not exist. Please use 'min_max' or 'CTGAN'.")
         data_cond_encoded_final = torch.cat(encoded_list, dim=1)
 
         return data_cond_encoded_final
@@ -203,22 +188,19 @@ class DataEncoder(object):
                 if self.cont_transform_method == "min_max":
                     decoded_data = encoder.inverse_transform(data_segment)
                     df_decoded[column] = decoded_data.flatten().astype(dtype)
-                elif self.cont_transform_method == "GMM":
-                    means = encoder.means_.flatten()
-                    decoded_values = np.dot(data_segment, means)
-                    df_decoded[column] = decoded_values.astype(dtype)
                 elif self.cont_transform_method == "CTGAN":
-                    one_hot_part = data_segment[:, :-1]
-                    alpha_part = data_segment[:, -1]
-                    # Sample components according to one-hot encoding
-                    selected_components = np.argmax(one_hot_part, axis=1)
+                    one_hot_part = data_segment[:, 1:]
+                    alpha_part = data_segment[:, 0]
+                    selected_components = np.argmax(one_hot_part, axis=1) 
                     means = encoder.means_.flatten()
                     stds = np.sqrt(encoder.covariances_).flatten()
                     selected_means = means[selected_components]
                     selected_stds = stds[selected_components]
-                    # Multiply alpha by 4 * standard deviation
                     decoded_values = selected_means + alpha_part * (4 * selected_stds)
                     df_decoded[column] = decoded_values.astype(dtype)
+                else:
+                    print("how did you come so fare?")
+                    raise ValueError(f"The cont_transform_method '{self.cont_transform_method}' does not exist. Please use 'min_max' or 'CTGAN'.")
             index_units += units
 
         return df_decoded
@@ -251,21 +233,15 @@ class DataEncoder(object):
                 if self.cont_transform_method == "min_max":
                     decoded_data = encoder.inverse_transform(data_segment)
                     df_decoded[column] = decoded_data.flatten().astype(dtype)
-                elif self.cont_transform_method == "GMM":
-                    means = encoder.means_.flatten()
-                    decoded_values = np.dot(data_segment, means)
-                    df_decoded[column] = decoded_values.astype(dtype)
                 elif self.cont_transform_method == "CTGAN":
-                    one_hot_part = data_segment[:, :-1]
-                    alpha_part = data_segment[:, -1]
-                    # Sample components according to one-hot encoding
-                    selected_components = np.argmax(one_hot_part, axis=1)
+                    one_hot_part = data_segment[:, 1:]
+                    alpha_part = data_segment[:, 0]
+                    selected_components = np.argmax(one_hot_part, axis=1)    # Sample components according to one-hot encoding
                     means = encoder.means_.flatten()
                     stds = np.sqrt(encoder.covariances_).flatten()
                     selected_means = means[selected_components]
                     selected_stds = stds[selected_components]
-                    # Multiply alpha by 4 * standard deviation
-                    decoded_values = selected_means + alpha_part * (4 * selected_stds)
+                    decoded_values = selected_means + alpha_part * (4 * selected_stds)   # Multiply alpha by 4 * standard deviation
                     df_decoded[column] = decoded_values.astype(dtype)
             index_units += units
 
@@ -286,22 +262,13 @@ class DataEncoder(object):
                     random_uniform = np.random.uniform(0, 1, num_samples)
                     scaler = self.encoders_in_order[self.columns_in_order.index(column)]
                     random_conditions[column] = scaler.inverse_transform(random_uniform.reshape(-1, 1)).flatten()
-                elif self.cont_transform_method in ["GMM", "CTGAN"]:
-                    gmm = self.encoders_in_order[self.columns_in_order.index(column)]
-                    sampled_components = np.random.choice(self.gmm_n_components, size=num_samples, p=gmm.weights_)
-                    means = gmm.means_.flatten()
-                    stds = np.sqrt(gmm.covariances_).flatten()
-                    selected_means = means[sampled_components]
-                    selected_stds = stds[sampled_components]
-                    if self.cont_transform_method == "CTGAN":
-                        # Generate alpha from a normal distribution scaled by 1/4
-                        alpha = np.random.normal(0, 1, num_samples)
-                        sampled_values = selected_means + alpha * (4 * selected_stds)
-                        random_conditions[column] = sampled_values
-                    else:
-                        sampled_values = np.random.normal(loc=selected_means, scale=selected_stds)
-                        random_conditions[column] = sampled_values
-
+                elif self.cont_transform_method in "CTGAN":
+                    raise NotImplementedError
+                    #TODO sample Value that could accure in the col and transform it
+                else:
+                    print("how did you come so far with wrong encoding?")
+                    raise ValueError(f"The cont_transform_method '{self.cont_transform_method}' does not exist. Please use 'min_max' or 'CTGAN'.")
+                
         random_conditions_df = pd.DataFrame(random_conditions)
 
         return random_conditions_df
