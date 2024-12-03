@@ -9,8 +9,8 @@ import pandas as pd
 from torch.utils.data import DataLoader, random_split
 
 # Projects imports
-from table_gan.Data.dataset import CTGan_data_set
-from table_gan.Model.Extra_Pen.Classifier import Classifier
+from TabDataGAN.Data.dataset import CTGan_data_set
+from TabDataGAN.Model.Extra_Pen.Classifier import Classifier
 
 # Default parameter
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu' # If device is not set try to use cuda else cpu

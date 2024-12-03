@@ -12,14 +12,14 @@ from torch.utils.data import DataLoader, random_split
 
 
 # Projects imports
-from table_gan.Model.Gans.Base_Gan import Base_CTGan
+from TabDataGAN.Model.Gans.Base_Gan import Base_CTGan
 
-from table_gan.Model.Generators.Generator import Generator
-from table_gan.Model.Critic.critic import Discriminator
+from TabDataGAN.Model.Generators.Generator import Generator
+from TabDataGAN.Model.Critic.critic import Discriminator
 
-from table_gan.Data.dataset import CTGan_data_set
-from table_gan.Model.Gans._gan_utils import format_time, format_time_with_h, gradient_penalty, wasserstein_loss
-from table_gan.Data.data_encoder import DataEncoder
+from TabDataGAN.Data.dataset import CTGan_data_set
+from TabDataGAN.Model.Gans._gan_utils import format_time, format_time_with_h, gradient_penalty, wasserstein_loss
+from TabDataGAN.Data.data_encoder import DataEncoder
 
 # Default parameter
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu' # If device is not set try to use cuda else cpu
@@ -197,7 +197,7 @@ class WCTGan(Base_CTGan):
         return train_loader, val_loader
 
 
-    def preprocess_and_load_train_test_classifier(self, ctgan_data_set, batch_size, train_size = 0.8): #-> Tuple(torch.dataloader()): #TODO
+    def preprocess_and_load_train_test_classifier(self, ctgan_data_set, batch_size, train_size=0.8) -> Tuple[DataLoader, DataLoader]:
         if self.lambda_cond_classifier_loss_weight != 0:
             data = ctgan_data_set.dataframe()
             conditiond_encoded = self.data_encoder.transform_cond(data)
