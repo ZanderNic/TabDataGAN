@@ -254,16 +254,18 @@ class WCTGan(Base_CTGan):
             self.output_space =  self.data_encoder.encode_dim() 
             self.n_units_conditional =  self.data_encoder.encode_cond_dim() 
 
+            self.columns_in_order = self.data_encoder.columns_in_order
+            self.cond_cols_in_order = self.data_encoder.cond_cols_in_order
+
             # init generator
             self.generator = self.generator_class(
                 generator_n_units_in=self.n_units_latent,
                 generator_n_units_conditional=self.n_units_conditional,
                 generator_n_units_out=self.output_space,
                 units_per_column=self.data_encoder.get_units_per_column(),
-                columns_in_order=self.data_encoder.cols(),
+                columns_in_order=self.columns_in_order,
                 categorical_columns=self.data_encoder.categorical_columns,
                 numerical_columns=self.data_encoder.numeric_columns,
-                units_per_col=self.data_encoder.get_units_per_column(),  # If required
                 generator_n_layers_hidden=self.generator_n_layers_hidden,
                 generator_n_units_hidden=self.generator_n_units_hidden,
                 generator_nonlin=self.generator_nonlin,
@@ -542,7 +544,6 @@ class WCTGan(Base_CTGan):
             'columns_in_order': self.data_encoder.cols(),
             'categorical_columns': self.data_encoder.categorical_columns,
             'numerical_columns': self.data_encoder.numeric_columns,
-            'units_per_col': self.data_encoder.get_units_per_column()
         })
 
         self.generator = Generator(**generator_params).to(self.device)

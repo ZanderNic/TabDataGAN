@@ -156,7 +156,7 @@ class Base_CTGan(nn.Module):
 
         loss_condition = torch.tensor(0.0, device=self.device)
 
-        for i, col_name in enumerate(self.columns_in_order):
+        for i, col_name in enumerate(self.cond_cols_in_order): 
             cond_real_tensor = cond_real[:, cum_units_per_col[i]:cum_units_per_col[i+1]]
             cond_gen_tensor = cond_x_gen[:, cum_units_per_col[i]:cum_units_per_col[i+1]]
 
@@ -195,7 +195,8 @@ class Base_CTGan(nn.Module):
 
         loss_condition_class = torch.tensor(0.0, device=self.device)
 
-        for i, col_name in enumerate(self.columns_in_order): 
+        for i, col_name in enumerate(self.cond_cols_in_order): 
+
             cond_real_tensor = cond_real[:, cum_units_per_col[i]:cum_units_per_col[i+1]]
             cond_gen_tensor = pred_cond_x_gen[:, cum_units_per_col[i]:cum_units_per_col[i+1]]
 

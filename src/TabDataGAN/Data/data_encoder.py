@@ -304,9 +304,6 @@ class DataEncoder(object):
     def cols(self):
         return self.columns_in_order
 
-    def cond_cols(self):
-        return self.cond_cols_in_order
-
     def get_units_accumulate(self):
         return self.units_accumulate
 

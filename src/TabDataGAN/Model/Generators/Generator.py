@@ -21,7 +21,6 @@ class Generator(nn.Module):
         columns_in_order: List[str],
         categorical_columns: List[str],
         numerical_columns: List[str],
-        units_per_col: List[float],
         generator_n_layers_hidden: int = 3,
         generator_n_units_hidden: int = 200,
         generator_nonlin: str = "leaky_relu",
@@ -39,7 +38,6 @@ class Generator(nn.Module):
         self.columns_in_order = columns_in_order
         self.categorical_columns = categorical_columns
         self.numerical_columns = numerical_columns
-        self.units_per_col = units_per_col  
 
         # Activation functions for outputs
         self.generator_nonlin_out_num = get_nolin_act(generator_nonlin_out_num)
@@ -140,7 +138,7 @@ class Conv_Generator(nn.Module):
         self.columns_in_order = columns_in_order
         self.categorical_columns = categorical_columns
         self.numerical_columns = numerical_columns
-        self.units_per_col = units_per_col
+
 
         # Activation functions for outputs
         self.generator_nonlin_out_num = get_nolin_act(generator_nonlin_out_num)
