@@ -93,7 +93,7 @@ class Generator(nn.Module):
                     feature_output = numerical_part.unsqueeze(1)         
             else:
                 print("something wen't wrong D:")
-                return ValueError("Error in the Generator forward call")
+                raise ValueError("Error in the Generator forward call")
             outputs.append(feature_output)
             start = end
         x = torch.cat(outputs, dim=1)

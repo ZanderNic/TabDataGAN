@@ -141,31 +141,50 @@ class Base_CTGan(nn.Module):
 
         return total_extra_loss
 
-    # TODO this two implementations dosent work with CTGan encoding or GMM 
-    def compute_condition_loss(self, gen_data:torch.tensor, real_cond:torch.tensor):
-        cond_x_gen = self.data_encoder.get_condition_from_tensor(gen_data) 
 
-        cond_x_gen = cond_x_gen.to(self.device)
+    def compute_condition_loss(self, gen_data: torch.Tensor, real_cond: torch.Tensor) -> torch.Tensor:
+        """
+            Computes the loss for the condition columns
+            using the generator's output. This ensures the generator learns to produce data
+            with the given condition
+        """
+        cond_x_gen = self.data_encoder.get_condition_from_tensor(gen_data).to(self.device)
         cond_real = real_cond.to(self.device)
 
-        units_per_col = self.data_encoder.get_units_per_cond_column()    
+        units_per_col = self.data_encoder.get_units_per_cond_column()
         cum_units_per_col = [0] + np.cumsum(units_per_col).tolist()
 
         loss_condition = torch.tensor(0.0, device=self.device)
 
-        for i in range(len(units_per_col)):
+        for i, col_name in enumerate(self.columns_in_order):
             cond_real_tensor = cond_real[:, cum_units_per_col[i]:cum_units_per_col[i+1]]
             cond_gen_tensor = cond_x_gen[:, cum_units_per_col[i]:cum_units_per_col[i+1]]
-                
-            if units_per_col[i]>= 0:
-                loss_condition = loss_condition + torch.nn.functional.cross_entropy(cond_gen_tensor, torch.argmax(cond_real_tensor, dim = 1)) 
+
+            if col_name in self.cat_cols:  # Categorical column
+                target = torch.argmax(cond_real_tensor, dim=1)  # Convert to class indices
+                loss_condition += torch.nn.functional.cross_entropy(cond_gen_tensor, target)
+
+            elif col_name in self.num_cols:  # Numerical column
+                numerical_real_part = cond_real_tensor[:, 0]    # The fist output will always be numeric (see data encoder)
+                numerical_gen_part = cond_gen_tensor[:, 0]
+                loss_condition += torch.mean((numerical_real_part - numerical_gen_part) ** 2)  # MSE
+
+                if units_per_col[i] > 1:
+                    one_hot_real_part = cond_real_tensor[:, 1:]
+                    one_hot_gen_part = cond_gen_tensor[:, 1:]
+                    one_hot_target = torch.argmax(one_hot_real_part, dim=1)
+                    loss_condition += torch.nn.functional.cross_entropy(one_hot_gen_part, one_hot_target)
+
             else:
-                loss_condition = loss_condition + torch.mean((cond_real_tensor - cond_gen_tensor)**2) # use mse if it is a num col
+                raise ValueError(f"Unexpected column type for column '{col_name}'")
 
         return loss_condition
 
-    # TODO this two implementations dosent work with CTGan encoding or GMM
+
     def compute_condition_classifier_loss(self, gen_data:torch.tensor, real_cond:torch.tensor):
+        """
+            Computes the classification loss for the condition columns using the trained classifier. This enables the generator to produce data that fits the structure of the condition.
+        """
         x_gen_data = self.data_encoder.get_only_data_from_tensor(gen_data) 
 
         cond_real = real_cond.to(self.device)
@@ -176,14 +195,27 @@ class Base_CTGan(nn.Module):
 
         loss_condition_class = torch.tensor(0.0, device=self.device)
 
-        for i in range(len(units_per_col)):
+        for i, col_name in enumerate(self.columns_in_order): 
             cond_real_tensor = cond_real[:, cum_units_per_col[i]:cum_units_per_col[i+1]]
             cond_gen_tensor = pred_cond_x_gen[:, cum_units_per_col[i]:cum_units_per_col[i+1]]
-                
-            if units_per_col[i]>= 0:
+
+            if col_name in self.cat_cols:
                 loss_condition_class = loss_condition_class + torch.nn.functional.cross_entropy(cond_gen_tensor, torch.argmax(cond_real_tensor, dim = 1)) 
+
+            elif col_name in self.num_cols:  
+                numerical_real_part = cond_real_tensor[:, 0] # The fist output will always be numeric 
+                numerical_gen_part = cond_gen_tensor[:, 0]  
+                
+                loss_condition_class = loss_condition_class + torch.mean((numerical_real_part - numerical_gen_part)**2) # use mse if it is a num col
+
+                if units_per_col[i] > 1:                            # Check if the Encoding was Min_max or CTGAN by checking the units per coll
+                    one_hot_real_part = cond_real_tensor[:, 1:]
+                    one_hot_gen_part = cond_gen_tensor[:, 1:]
+
+                    loss_condition_class = loss_condition_class + torch.nn.functional.cross_entropy(one_hot_gen_part, torch.argmax(one_hot_real_part, dim = 1))
+                        
             else:
-                loss_condition_class = loss_condition_class + torch.mean((cond_real_tensor - cond_gen_tensor)**2) # use mse if it is a num col
+                raise ValueError("Error D: (sad)")
 
         return loss_condition_class
 
