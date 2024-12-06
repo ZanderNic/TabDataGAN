@@ -445,6 +445,7 @@ class WCTGan(Base_CTGan):
         avg_loss_gen = total_loss_gen / len(test_loader)
         return avg_loss_gen
     
+    
     def save_checkpoint(self, epoch, checkpoint_dir="checkpoints"):
         os.makedirs(checkpoint_dir, exist_ok=True)
 
@@ -501,8 +502,6 @@ class WCTGan(Base_CTGan):
                 }
             }
         }, save_path)
-
-
 
 
     def load(self, load_path="wctgan_model.pt"):

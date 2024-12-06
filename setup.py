@@ -11,6 +11,7 @@ setup(
         "pandas",
         "matplotlib",
         "scikit-learn",
+        "seaborn"
     ],
     author="Nicolas Zander",
     url="https://github.com/ZanderNic/TabDataGAN",
